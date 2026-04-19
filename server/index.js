@@ -257,17 +257,13 @@ async function verify_user(input) {
   const name = clean_name(input.username);
   const display = safe_text(input.displayname, 60);
   const userid = Number(input.userid || 0);
-  if (!name || !userid || userid < 1) return null;
+  if (!name || !userid || userid < 1) return { ok: false, code: "bad_identity" };
   const key = String(userid);
   const now = Date.now();
   const cached = db_get_user(userid);
   if (cached && now - cached.time < 3600000) {
-    if (
-      cached.username.toLowerCase() === name.toLowerCase() &&
-      display.length > 0 &&
-      cached.displayname.toLowerCase() === display.toLowerCase()
-    ) {
-      return cached;
+    if (cached.username.toLowerCase() === name.toLowerCase()) {
+      return { ok: true, user: cached };
     }
   }
   if (users_busy.has(key)) return users_busy.get(key);
@@ -275,23 +271,17 @@ async function verify_user(input) {
     try {
       const one = await fetch_json(`https://users.roblox.com/v1/users/${userid}`);
       const ok_name = one && one.name && one.name.toLowerCase() === name.toLowerCase();
-      const ok_display =
-        one && one.displayName && one.displayName.toLowerCase() === display.toLowerCase();
-      const back = await fetch_json(
-        `https://users.roblox.com/v1/users/${userid}/display-names/validate?displayName=${encodeURIComponent(display)}`
-      ).catch(() => ({ code: 0 }));
-      const ok_back = back && (back.code === 0 || back.code === 1);
-      if (!ok_name || !ok_display || !ok_back) return null;
+      if (!ok_name) return { ok: false, code: "name_mismatch" };
       const row = {
         userid,
         username: one.name,
-        displayname: one.displayName,
+        displayname: one.displayName || display || one.name,
         time: Date.now()
       };
       db_set_user(row);
-      return row;
-    } catch {
-      return null;
+      return { ok: true, user: row };
+    } catch (err) {
+      return { ok: false, code: "verify_lookup_failed", detail: String(err && err.message || "error") };
     } finally {
       users_busy.delete(key);
     }
@@ -440,13 +430,14 @@ wss.on("connection", (ws, req) => {
       return;
     }
     if (msg.type === "hello") {
-      const user = await verify_user(msg);
-      if (!user) {
-        log_line(`hello reject path=${path} userid=${String(msg.userid || "")} username=${String(msg.username || "")} display=${String(msg.displayname || "")}`);
-        ws_send(ws, { type: "bye" });
+      const checked = await verify_user(msg);
+      if (!checked.ok) {
+        log_line(`hello reject path=${path} userid=${String(msg.userid || "")} username=${String(msg.username || "")} display=${String(msg.displayname || "")} code=${checked.code || "reject"} detail=${String(checked.detail || "")}`);
+        ws_send(ws, { type: "bye", code: checked.code || "reject", detail: checked.detail || "" });
         ws.close();
         return;
       }
+      const user = checked.user;
       log_line(`hello ok path=${path} userid=${user.userid} username=${user.username}`);
       state = { user };
       by_userid.set(String(user.userid), { ws, user });

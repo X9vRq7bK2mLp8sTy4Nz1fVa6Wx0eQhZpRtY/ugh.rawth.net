@@ -449,7 +449,7 @@ local function bind_socket(sock)
                 ensure_tag(row)
             end
         elseif msg.type == "bye" then
-            log("server rejected hello")
+            log("server rejected hello code " .. tostring(msg.code or "reject") .. " detail " .. tostring(msg.detail or ""))
             pcall(function() sock:Close() end)
         end
     end)
