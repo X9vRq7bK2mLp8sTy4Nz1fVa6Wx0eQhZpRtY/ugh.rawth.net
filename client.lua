@@ -28,9 +28,12 @@ end
 local gui_parent = pick_ui_parent()
 
 local ws_host = "wss://ugh.rawth.net"
-local ws_url = ""
+local ws_urls = {}
 local ws = nil
 local ws_last = 0
+local ws_next_try = 1
+local ws_last_fail_log = 0
+local ws_last_no_api_log = 0
 
 local folder_root = "client_cache"
 local folder_asset = folder_root .. "/asset"
@@ -108,7 +111,11 @@ local function make_session()
 end
 
 local session_id = make_session()
-ws_url = ws_host .. "/live/" .. session_id
+ws_urls = {
+    ws_host .. "/live/" .. session_id,
+    ws_host .. "/flow/" .. tostring(local_player.UserId) .. "/" .. session_id,
+    ws_host .. "/ws"
+}
 log("loaded")
 log("default tags ready")
 
@@ -466,13 +473,27 @@ local function connect_loop()
             else
                 local fn = ws_pick()
                 if fn then
+                    local pick = ws_urls[ws_next_try] or ws_urls[1]
+                    ws_next_try += 1
+                    if ws_next_try > #ws_urls then ws_next_try = 1 end
                     local ok, sock = pcall(function()
-                        return fn(ws_url)
+                        return fn(pick)
                     end)
                     if ok and sock then
+                        log("connect route " .. tostring(pick))
                         bind_socket(sock)
                     else
-                        log("connect failed")
+                        local now = tick()
+                        if now - ws_last_fail_log > 8 then
+                            ws_last_fail_log = now
+                            log("connect failed route " .. tostring(pick) .. " reason " .. tostring(sock))
+                        end
+                    end
+                else
+                    local now = tick()
+                    if now - ws_last_no_api_log > 12 then
+                        ws_last_no_api_log = now
+                        log("connect failed no websocket api")
                     end
                 end
             end

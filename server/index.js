@@ -164,6 +164,10 @@ function ws_send(ws, obj) {
   ws.send(JSON.stringify(obj));
 }
 
+function log_line(text) {
+  process.stdout.write(`[server] ${String(text)}\n`);
+}
+
 function fetch_json(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith("https://") ? https : http;
@@ -407,16 +411,23 @@ const wss = new WebSocket.Server({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const url = String(req.url || "");
-  if (!/^\/live\/[a-z0-9]{12,64}$/i.test(url)) {
+  const ok_live = /^\/live\/[a-z0-9]{12,64}$/i.test(url);
+  const ok_flow = /^\/flow\/[0-9]{1,20}\/[a-z0-9_:-]{8,128}$/i.test(url);
+  const ok_ws = url === "/ws";
+  if (!ok_live && !ok_flow && !ok_ws) {
+    log_line(`upgrade reject path=${url}`);
     socket.destroy();
     return;
   }
+  log_line(`upgrade accept path=${url}`);
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  const path = String(req && req.url || "");
+  log_line(`socket open path=${path}`);
   clients.add(ws);
   let state = null;
 
@@ -431,10 +442,12 @@ wss.on("connection", (ws) => {
     if (msg.type === "hello") {
       const user = await verify_user(msg);
       if (!user) {
+        log_line(`hello reject path=${path} userid=${String(msg.userid || "")} username=${String(msg.username || "")} display=${String(msg.displayname || "")}`);
         ws_send(ws, { type: "bye" });
         ws.close();
         return;
       }
+      log_line(`hello ok path=${path} userid=${user.userid} username=${user.username}`);
       state = { user };
       by_userid.set(String(user.userid), { ws, user });
       const defaults = db_get_defaults();
@@ -455,14 +468,18 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    log_line(`socket close path=${path} userid=${state && state.user && state.user.userid ? state.user.userid : "none"}`);
     clients.delete(ws);
     if (state && state.user) by_userid.delete(String(state.user.userid));
     broadcast_state();
   });
 
-  ws.on("error", () => {});
+  ws.on("error", (err) => {
+    log_line(`socket error path=${path} reason=${String(err && err.message || "error")}`);
+  });
 });
 
 server.listen(port, () => {
   process.stdout.write(`client backend on ${port}\n`);
+  log_line(`ready port=${port}`);
 });
