@@ -375,6 +375,10 @@ local function apply_gui(item, row)
     if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
     if need_bg then cache_known[need_bg] = true end
 
+    if item.icon_sig ~= icon_sig and not icon_ready then
+        stop_gif("icon_" .. tostring(row.userid))
+        item.icon.Image = ""
+    end
     if item.icon_sig ~= icon_sig and icon_ready then
         if merged.icon.mode == "hash" then
             play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon)
@@ -382,6 +386,11 @@ local function apply_gui(item, row)
             stop_gif("icon_" .. tostring(row.userid))
         end
         item.icon_sig = icon_sig
+    end
+    if item.bg_sig ~= bg_sig and not bg_ready then
+        stop_gif("bg_" .. tostring(row.userid))
+        item.background.Image = ""
+        item.background.ImageTransparency = 0
     end
     if item.bg_sig ~= bg_sig and bg_ready then
         if merged.background.mode == "hash" then
