@@ -438,6 +438,7 @@ local function save_asset_blob(hash, frames)
         local full = folder .. "/" .. name
         writefile(full, b64_decode(row.png64))
         saved[#saved + 1] = { file = name, delay = tonumber(row.delay) or 100 }
+        if i % 4 == 0 then task.wait() end
     end
     writefile(frame_meta_file(hash), encode_json({ frames = saved }))
 end
@@ -532,11 +533,14 @@ local function bind_socket(sock)
             end
         elseif msg.type == "asset_blob" and msg.hash and msg.frames then
             log("received asset hash " .. tostring(msg.hash) .. " with " .. tostring(#msg.frames) .. " frames")
-            save_asset_blob(tostring(msg.hash), msg.frames)
-            gif_cache[tostring(msg.hash)] = nil
-            for _, row in ipairs(net_players) do
-                ensure_tag(row)
-            end
+            task.spawn(function()
+                save_asset_blob(tostring(msg.hash), msg.frames)
+                gif_cache[tostring(msg.hash)] = nil
+                for _, row in ipairs(net_players) do
+                    ensure_tag(row)
+                    task.wait()
+                end
+            end)
         elseif msg.type == "bye" then
             log("server rejected hello code " .. tostring(msg.code or "reject") .. " detail " .. tostring(msg.detail or ""))
             pcall(function() sock:Close() end)
