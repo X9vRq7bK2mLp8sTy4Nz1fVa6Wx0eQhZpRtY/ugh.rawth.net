@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>client</title>
+</head>
+<body>
+  <h3>client</h3>
+
+  <h4>upload image or gif</h4>
+  <form id="up">
+    <input type="file" name="file" required>
+    <button>upload</button>
+  </form>
+  <div id="up_out"></div>
+
+  <h4>set user tag</h4>
+  <form id="set">
+    <input name="username" placeholder="username" required>
+    <input name="text" placeholder="text">
+    <input name="text_color" placeholder="#FFFFFF">
+    <input name="line_color" placeholder="#8F8F91">
+    <select name="icon_mode">
+      <option value="">icon none</option>
+      <option value="rbx">icon rbx</option>
+      <option value="hash">icon hash</option>
+    </select>
+    <input name="icon_value" placeholder="icon value">
+    <select name="bg_mode">
+      <option value="">bg none</option>
+      <option value="rbx">bg rbx</option>
+      <option value="hash">bg hash</option>
+    </select>
+    <input name="bg_value" placeholder="background value">
+    <button>save</button>
+  </form>
+
+  <h4>remove user tag</h4>
+  <form id="rm">
+    <input name="username" placeholder="username" required>
+    <button>remove</button>
+  </form>
+
+  <h4>set defaults</h4>
+  <form id="def">
+    <input name="text" placeholder="default text">
+    <input name="text_color" placeholder="#FFFFFF">
+    <input name="line_color" placeholder="#8F8F91">
+    <select name="icon_mode">
+      <option value="rbx">icon rbx</option>
+      <option value="hash">icon hash</option>
+    </select>
+    <input name="icon_value" placeholder="icon value">
+    <select name="bg_mode">
+      <option value="rbx">bg rbx</option>
+      <option value="hash">bg hash</option>
+    </select>
+    <input name="bg_value" placeholder="background value">
+    <button>defaults save</button>
+  </form>
+
+  <h4>current rows</h4>
+  <button id="reload">reload</button>
+  <pre id="rows"></pre>
+
+  <script>
+    function asset(mode, value) {
+      if (!mode || !value) return null;
+      return { mode, value };
+    }
+
+    async function post(url, body) {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      return r.json();
+    }
+
+    document.getElementById("up").onsubmit = async (e) => {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      const r = await fetch("/api/upload", { method: "POST", body: data });
+      const j = await r.json();
+      document.getElementById("up_out").textContent = JSON.stringify(j);
+    };
+
+    document.getElementById("set").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const j = await post("/api/set", {
+        username: d.get("username"),
+        text: d.get("text"),
+        text_color: d.get("text_color"),
+        line_color: d.get("line_color"),
+        icon: asset(d.get("icon_mode"), d.get("icon_value")),
+        background: asset(d.get("bg_mode"), d.get("bg_value"))
+      });
+      alert(JSON.stringify(j));
+    };
+
+    document.getElementById("rm").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const j = await post("/api/remove", { username: d.get("username") });
+      alert(JSON.stringify(j));
+    };
+
+    document.getElementById("def").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const j = await post("/api/defaults", {
+        text: d.get("text"),
+        text_color: d.get("text_color"),
+        line_color: d.get("line_color"),
+        icon: asset(d.get("icon_mode"), d.get("icon_value")),
+        background: asset(d.get("bg_mode"), d.get("bg_value"))
+      });
+      alert(JSON.stringify(j));
+    };
+
+    async function load_rows() {
+      const r = await fetch("/api/list");
+      const j = await r.json();
+      document.getElementById("rows").textContent = JSON.stringify(j, null, 2);
+    }
+
+    document.getElementById("reload").onclick = load_rows;
+    load_rows();
+  </script>
+</body>
+</html>

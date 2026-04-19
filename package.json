@@ -1,0 +1,16 @@
+{
+  "name": "client",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "express": "^4.21.2",
+    "gif-frames": "^1.0.1",
+    "multer": "^1.4.5-lts.1",
+    "ws": "^8.18.1"
+  }
+}
