@@ -395,36 +395,44 @@ local function apply_gui(item, row)
     if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
     if need_bg then cache_known[need_bg] = true end
 
-    if item.icon_sig ~= icon_sig and not icon_ready then
-        item.icon_gen += 1
-        stop_gif("icon_" .. tostring(row.userid))
-        item.icon.Image = ""
-    end
-    if item.icon_sig ~= icon_sig and icon_ready then
-        item.icon_gen += 1
-        if merged.icon.mode == "hash" then
-            play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon, item, "icon_gen", item.icon_gen, "icon")
+    if item.icon_sig ~= icon_sig then
+        if icon_ready then
+            item.icon_gen += 1
+            if merged.icon.mode == "hash" then
+                play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon, item, "icon_gen", item.icon_gen, "icon")
+            else
+                stop_gif("icon_" .. tostring(row.userid))
+            end
+            item.icon_sig = icon_sig
         else
-            stop_gif("icon_" .. tostring(row.userid))
+            if item.icon_sig == "" then
+                item.icon_gen += 1
+                stop_gif("icon_" .. tostring(row.userid))
+                item.icon.Image = ""
+            end
+            item.icon_sig = icon_sig
         end
-        item.icon_sig = icon_sig
     end
-    if item.bg_sig ~= bg_sig and not bg_ready then
-        item.bg_gen += 1
-        stop_gif("bg_" .. tostring(row.userid))
-        item.background.Image = ""
-        item.background.ImageTransparency = 0
-    end
-    if item.bg_sig ~= bg_sig and bg_ready then
-        item.bg_gen += 1
-        if merged.background.mode == "hash" then
-            play_gif("bg_" .. tostring(row.userid), item.background, merged.background, item, "bg_gen", item.bg_gen, "bg")
-            item.background.ImageTransparency = 0
+    if item.bg_sig ~= bg_sig then
+        if bg_ready then
+            item.bg_gen += 1
+            if merged.background.mode == "hash" then
+                play_gif("bg_" .. tostring(row.userid), item.background, merged.background, item, "bg_gen", item.bg_gen, "bg")
+                item.background.ImageTransparency = 0
+            else
+                stop_gif("bg_" .. tostring(row.userid))
+                item.background.ImageTransparency = 0.12
+            end
+            item.bg_sig = bg_sig
         else
-            stop_gif("bg_" .. tostring(row.userid))
-            item.background.ImageTransparency = 0.12
+            if item.bg_sig == "" then
+                item.bg_gen += 1
+                stop_gif("bg_" .. tostring(row.userid))
+                item.background.Image = ""
+                item.background.ImageTransparency = 0
+            end
+            item.bg_sig = bg_sig
         end
-        item.bg_sig = bg_sig
     end
 end
 
