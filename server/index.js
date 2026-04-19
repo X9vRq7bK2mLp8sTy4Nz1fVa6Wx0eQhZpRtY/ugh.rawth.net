@@ -214,6 +214,24 @@ function db_set_defaults(value) {
     .run("defaults", JSON.stringify(value));
 }
 
+function db_get_cache_rev() {
+  const row = db.prepare("SELECT value FROM kv WHERE key = ?").get("cache_rev");
+  if (!row) {
+    db.prepare("INSERT INTO kv (key, value) VALUES (?, ?)").run("cache_rev", "1");
+    return 1;
+  }
+  const n = Number(row.value || 1);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
+function db_bump_cache_rev() {
+  const next = db_get_cache_rev() + 1;
+  db.prepare("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run("cache_rev", String(next));
+  return next;
+}
+
 function db_get_tag(username) {
   const row = db.prepare("SELECT payload FROM tags WHERE username = ?").get(username.toLowerCase());
   if (!row) return null;
@@ -321,12 +339,13 @@ function format_tag(user) {
 
 function broadcast_state() {
   const defaults = db_get_defaults();
+  const cache_rev = db_get_cache_rev();
   const list = [];
   for (const info of by_userid.values()) {
     list.push(format_tag(info.user));
   }
   for (const ws of clients) {
-    ws_send(ws, { type: "state", players: list, defaults });
+    ws_send(ws, { type: "state", players: list, defaults, cache_rev });
   }
 }
 
@@ -353,7 +372,8 @@ app.get("/", (req, res) => {
 app.get("/api/list", (req, res) => {
   const out = db_list_tags();
   const defaults = db_get_defaults();
-  res.json({ ok: true, tags: out, defaults });
+  const cache_rev = db_get_cache_rev();
+  res.json({ ok: true, tags: out, defaults, cache_rev });
 });
 
 app.post("/api/upload", upload.single("file"), async (req, res) => {
@@ -384,6 +404,7 @@ app.post("/api/set", (req, res) => {
     background: asset_pick(req.body.background)
   };
   db_set_tag(username, row);
+  db_bump_cache_rev();
   broadcast_state();
   res.json({ ok: true });
 });
@@ -392,6 +413,23 @@ app.post("/api/remove", (req, res) => {
   const username = clean_name(req.body.username).toLowerCase();
   if (!username) return res.status(400).json({ ok: false, code: "bad_username" });
   db_remove_tag(username);
+  db_bump_cache_rev();
+  broadcast_state();
+  res.json({ ok: true });
+});
+
+app.post("/api/reset-user", (req, res) => {
+  const username = clean_name(req.body.username).toLowerCase();
+  if (!username) return res.status(400).json({ ok: false, code: "bad_username" });
+  db_remove_tag(username);
+  db_bump_cache_rev();
+  broadcast_state();
+  res.json({ ok: true });
+});
+
+app.post("/api/reset-all", (req, res) => {
+  db.prepare("DELETE FROM tags").run();
+  db_bump_cache_rev();
   broadcast_state();
   res.json({ ok: true });
 });
@@ -442,7 +480,8 @@ wss.on("connection", (ws, req) => {
       state = { user };
       by_userid.set(String(user.userid), { ws, user });
       const defaults = db_get_defaults();
-      ws_send(ws, { type: "you", tag: format_tag(user), defaults });
+      const cache_rev = db_get_cache_rev();
+      ws_send(ws, { type: "you", tag: format_tag(user), defaults, cache_rev });
       broadcast_state();
       return;
     }

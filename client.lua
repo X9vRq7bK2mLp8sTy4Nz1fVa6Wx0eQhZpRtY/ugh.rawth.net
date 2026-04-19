@@ -34,9 +34,10 @@ local ws_last = 0
 local ws_next_try = 1
 local ws_last_fail_log = 0
 local ws_last_no_api_log = 0
+local cache_rev = 1
 
 local folder_root = "client_cache"
-local folder_asset = folder_root .. "/asset"
+local folder_asset = folder_root .. "/asset_1"
 if not isfolder(folder_root) then makefolder(folder_root) end
 if not isfolder(folder_asset) then makefolder(folder_asset) end
 
@@ -163,6 +164,23 @@ end
 
 local function frame_folder(hash)
     return folder_asset .. "/" .. tostring(hash)
+end
+
+local function switch_cache_rev(next_rev)
+    local n = tonumber(next_rev) or 1
+    if n < 1 then n = 1 end
+    n = math.floor(n)
+    if n == cache_rev then return end
+    cache_rev = n
+    folder_asset = folder_root .. "/asset_" .. tostring(cache_rev)
+    if not isfolder(folder_asset) then makefolder(folder_asset) end
+    gif_cache = {}
+    asset_ids = {}
+    pending_asset = {}
+    for key in pairs(gif_jobs) do
+        stop_gif(key)
+    end
+    log("cache rev " .. tostring(cache_rev))
 end
 
 local function frame_meta_file(hash)
@@ -509,6 +527,7 @@ local function bind_socket(sock)
         if msg.type == "state" and type(msg.players) == "table" then
             net_players = msg.players
             log("found " .. tostring(#net_players) .. " total users connected to websocket")
+            switch_cache_rev(msg.cache_rev)
             if type(msg.defaults) == "table" then
                 cfg_default = normalize_tag(msg.defaults)
                 log("loaded default tags")
@@ -520,6 +539,7 @@ local function bind_socket(sock)
             pull_missing_hashes()
         elseif msg.type == "you" and type(msg.tag) == "table" then
             cfg_you = normalize_tag(msg.tag)
+            switch_cache_rev(msg.cache_rev)
             log("found custom nametag for localplayer")
         elseif msg.type == "asset_start" and msg.hash then
             begin_asset(tostring(msg.hash), msg.count)

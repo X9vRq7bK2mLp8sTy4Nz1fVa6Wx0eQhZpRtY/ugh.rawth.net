@@ -45,6 +45,13 @@
     <input name="username" placeholder="username" required>
     <button>remove</button>
   </form>
+  <form id="ru">
+    <input name="username" placeholder="username to hard reset" required>
+    <button>reset user cache</button>
+  </form>
+  <form id="ra">
+    <button>reset all tags and cache rev</button>
+  </form>
 
   <h4>current rows and defaults</h4>
   <button id="reload">reload</button>
@@ -147,6 +154,25 @@
       const j = await post("/api/remove", { username: d.get("username") });
       if (j.ok) {
         toast_ok("removed");
+        load_rows();
+      }
+    };
+
+    document.getElementById("ru").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const j = await post("/api/reset-user", { username: d.get("username") });
+      if (j.ok) {
+        toast_ok("user reset");
+        load_rows();
+      }
+    };
+
+    document.getElementById("ra").onsubmit = async (e) => {
+      e.preventDefault();
+      const j = await post("/api/reset-all", {});
+      if (j.ok) {
+        toast_ok("all reset");
         load_rows();
       }
     };
