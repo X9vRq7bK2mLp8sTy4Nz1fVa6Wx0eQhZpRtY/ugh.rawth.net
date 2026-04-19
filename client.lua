@@ -297,6 +297,7 @@ local function build_gui(name)
     bg.Size = UDim2.new(1, 0, 1, 0)
     bg.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
     bg.BorderSizePixel = 0
+    bg.ZIndex = 1
     bg.Parent = bb
     Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 9)
 
@@ -310,6 +311,7 @@ local function build_gui(name)
     background.BackgroundTransparency = 1
     background.ImageTransparency = 0.22
     background.ScaleType = Enum.ScaleType.Crop
+    background.ZIndex = 1
     background.Parent = bg
     Instance.new("UICorner", background).CornerRadius = UDim.new(0, 9)
 
@@ -319,6 +321,7 @@ local function build_gui(name)
     icon.Position = UDim2.new(0, 7, 0.5, -14)
     icon.BackgroundTransparency = 1
     icon.ScaleType = Enum.ScaleType.Crop
+    icon.ZIndex = 3
     icon.Parent = bg
     Instance.new("UICorner", icon).CornerRadius = UDim.new(1, 0)
 
@@ -330,6 +333,7 @@ local function build_gui(name)
     title.Font = Enum.Font.GothamBold
     title.TextSize = 14
     title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 4
     title.Parent = bg
 
     local user = Instance.new("TextLabel")
@@ -340,6 +344,7 @@ local function build_gui(name)
     user.Font = Enum.Font.GothamBold
     user.TextSize = 10
     user.TextXAlignment = Enum.TextXAlignment.Left
+    user.ZIndex = 4
     user.Parent = bg
 
     return {
