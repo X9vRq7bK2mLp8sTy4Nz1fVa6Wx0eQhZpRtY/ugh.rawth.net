@@ -65,6 +65,15 @@ local gif_jobs = {}
 local gif_cache = {}
 local asset_ids = {}
 local pending_asset = {}
+
+local function clear_gif_cache_for_hash(hash)
+    local h = ":" .. tostring(hash)
+    for key in pairs(gif_cache) do
+        if string.sub(tostring(key), -#h) == h then
+            gif_cache[key] = nil
+        end
+    end
+end
 local function log(text)
     print("[client] " .. tostring(text))
 end
@@ -254,10 +263,11 @@ local function stop_gif(key)
     gif_jobs[key] = nil
 end
 
-local function play_gif(key, image_obj, raw, item, slot, gen)
+local function play_gif(key, image_obj, raw, item, slot, gen, slot_name)
     if type(raw) ~= "table" or raw.mode ~= "hash" then return end
     local hash = tostring(raw.value or "")
-    local entry = gif_cache[hash]
+    local cache_key = tostring(slot_name or "slot") .. ":" .. hash
+    local entry = gif_cache[cache_key]
     if not entry then
         local frames = asset_path_from_hash(hash)
         if not frames or #frames <= 1 then return end
@@ -269,7 +279,7 @@ local function play_gif(key, image_obj, raw, item, slot, gen)
             if i % 8 == 0 then task.wait() end
         end
         entry = { ids = ids, delays = delays, count = #ids }
-        gif_cache[hash] = entry
+        gif_cache[cache_key] = entry
     end
     if entry.count <= 1 then return end
     stop_gif(key)
@@ -393,7 +403,7 @@ local function apply_gui(item, row)
     if item.icon_sig ~= icon_sig and icon_ready then
         item.icon_gen += 1
         if merged.icon.mode == "hash" then
-            play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon, item, "icon_gen", item.icon_gen)
+            play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon, item, "icon_gen", item.icon_gen, "icon")
         else
             stop_gif("icon_" .. tostring(row.userid))
         end
@@ -408,7 +418,7 @@ local function apply_gui(item, row)
     if item.bg_sig ~= bg_sig and bg_ready then
         item.bg_gen += 1
         if merged.background.mode == "hash" then
-            play_gif("bg_" .. tostring(row.userid), item.background, merged.background, item, "bg_gen", item.bg_gen)
+            play_gif("bg_" .. tostring(row.userid), item.background, merged.background, item, "bg_gen", item.bg_gen, "bg")
             item.background.ImageTransparency = 0
         else
             stop_gif("bg_" .. tostring(row.userid))
@@ -571,7 +581,7 @@ local function bind_socket(sock)
             save_asset_chunk(tostring(msg.hash), msg.start, msg.frames)
         elseif msg.type == "asset_done" and msg.hash then
             finish_asset(tostring(msg.hash))
-            gif_cache[tostring(msg.hash)] = nil
+            clear_gif_cache_for_hash(tostring(msg.hash))
             log("asset ready hash " .. tostring(msg.hash))
             for _, row in ipairs(net_players) do
                 ensure_tag(row)
@@ -580,7 +590,7 @@ local function bind_socket(sock)
             log("received asset hash " .. tostring(msg.hash) .. " with " .. tostring(#msg.frames) .. " frames")
             task.spawn(function()
                 save_asset_blob(tostring(msg.hash), msg.frames)
-                gif_cache[tostring(msg.hash)] = nil
+                clear_gif_cache_for_hash(tostring(msg.hash))
                 for _, row in ipairs(net_players) do
                     ensure_tag(row)
                     task.wait()
