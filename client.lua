@@ -61,6 +61,9 @@ local net_players = {}
 local cache_known = {}
 local tags = {}
 local gif_jobs = {}
+local gif_cache = {}
+local asset_ids = {}
+local pending_asset = {}
 local function log(text)
     print("[client] " .. tostring(text))
 end
@@ -199,6 +202,14 @@ local function asset_path_from_hash(hash)
     return list
 end
 
+local function asset_id(file)
+    local hit = asset_ids[file]
+    if hit then return hit end
+    local out = get_asset(file)
+    asset_ids[file] = out
+    return out
+end
+
 local function resolve_asset(raw)
     if type(raw) ~= "table" then return nil, nil end
     if raw.mode == "rbx" then
@@ -209,7 +220,7 @@ local function resolve_asset(raw)
         if not frames then
             return nil, tostring(raw.value)
         end
-        local first = get_asset(frames[1].file)
+        local first = asset_id(frames[1].file)
         return first, nil
     end
     return nil, nil
@@ -223,20 +234,33 @@ local function stop_gif(key)
 end
 
 local function play_gif(key, image_obj, raw)
-    stop_gif(key)
     if type(raw) ~= "table" or raw.mode ~= "hash" then return end
-    local frames = asset_path_from_hash(raw.value)
-    if not frames or #frames <= 1 then return end
+    local hash = tostring(raw.value or "")
+    local entry = gif_cache[hash]
+    if not entry then
+        local frames = asset_path_from_hash(hash)
+        if not frames or #frames <= 1 then return end
+        local ids = {}
+        local delays = {}
+        for i, row in ipairs(frames) do
+            ids[i] = asset_id(row.file)
+            delays[i] = math.max(0.04, (tonumber(row.delay) or 100) / 1000)
+            if i % 8 == 0 then task.wait() end
+        end
+        entry = { ids = ids, delays = delays, count = #ids }
+        gif_cache[hash] = entry
+    end
+    if entry.count <= 1 then return end
+    stop_gif(key)
     local job = { live = true }
     gif_jobs[key] = job
     task.spawn(function()
         local index = 1
         while job.live and image_obj and image_obj.Parent do
-            local row = frames[index]
-            image_obj.Image = get_asset(row.file)
-            task.wait(math.max(0.04, row.delay / 1000))
+            image_obj.Image = entry.ids[index]
+            task.wait(entry.delays[index])
             index += 1
-            if index > #frames then index = 1 end
+            if index > entry.count then index = 1 end
         end
     end)
 end
@@ -307,7 +331,9 @@ local function build_gui(name)
         background = background,
         icon = icon,
         title = title,
-        user = user
+        user = user,
+        icon_sig = "",
+        bg_sig = ""
     }
 end
 
@@ -318,17 +344,35 @@ local function apply_gui(item, row)
     item.title.TextColor3 = merged.text_color
     item.user.Text = "@" .. tostring(row.username or "?")
     item.user.TextColor3 = Color3.fromRGB(180, 180, 180)
+    local icon_sig = tostring(merged.icon.mode or "") .. ":" .. tostring(merged.icon.value or "")
+    local bg_sig = tostring(merged.background.mode or "") .. ":" .. tostring(merged.background.value or "")
 
     local icon_image, need_icon = resolve_asset(merged.icon)
-    if icon_image then item.icon.Image = icon_image end
+    if icon_image and item.icon_sig ~= icon_sig then item.icon.Image = icon_image end
     if need_icon then cache_known[need_icon] = true end
 
     local bg_image, need_bg = resolve_asset(merged.background)
-    if bg_image then item.background.Image = bg_image end
+    if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
     if need_bg then cache_known[need_bg] = true end
 
-    play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon)
-    play_gif("bg_" .. tostring(row.userid), item.background, merged.background)
+    if item.icon_sig ~= icon_sig then
+        if merged.icon.mode == "hash" then
+            play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon)
+        else
+            stop_gif("icon_" .. tostring(row.userid))
+        end
+        item.icon_sig = icon_sig
+    end
+    if item.bg_sig ~= bg_sig then
+        if merged.background.mode == "hash" then
+            play_gif("bg_" .. tostring(row.userid), item.background, merged.background)
+            item.background.ImageTransparency = 0
+        else
+            stop_gif("bg_" .. tostring(row.userid))
+            item.background.ImageTransparency = 0.12
+        end
+        item.bg_sig = bg_sig
+    end
 end
 
 local function find_head(player)
@@ -398,6 +442,38 @@ local function save_asset_blob(hash, frames)
     writefile(frame_meta_file(hash), encode_json({ frames = saved }))
 end
 
+local function begin_asset(hash, count)
+    pending_asset[hash] = { count = tonumber(count) or 0, saved = {} }
+    local folder = frame_folder(hash)
+    if not isfolder(folder) then makefolder(folder) end
+end
+
+local function save_asset_chunk(hash, start, frames)
+    local state = pending_asset[hash]
+    if not state then return end
+    local base = tonumber(start) or 0
+    for i, row in ipairs(frames) do
+        local idx = base + i - 1
+        local name = tostring(idx) .. ".png"
+        local full = frame_folder(hash) .. "/" .. name
+        writefile(full, b64_decode(row.png64))
+        state.saved[#state.saved + 1] = { file = name, delay = tonumber(row.delay) or 100, idx = idx }
+        if i % 4 == 0 then task.wait() end
+    end
+end
+
+local function finish_asset(hash)
+    local state = pending_asset[hash]
+    if not state then return end
+    table.sort(state.saved, function(a, b) return a.idx < b.idx end)
+    local frames = {}
+    for i, row in ipairs(state.saved) do
+        frames[i] = { file = row.file, delay = row.delay }
+    end
+    writefile(frame_meta_file(hash), encode_json({ frames = frames }))
+    pending_asset[hash] = nil
+end
+
 local function ws_pick()
     if WebSocket and WebSocket.connect then return WebSocket.connect end
     return nil
@@ -442,9 +518,22 @@ local function bind_socket(sock)
         elseif msg.type == "you" and type(msg.tag) == "table" then
             cfg_you = normalize_tag(msg.tag)
             log("found custom nametag for localplayer")
+        elseif msg.type == "asset_start" and msg.hash then
+            begin_asset(tostring(msg.hash), msg.count)
+            log("receiving asset hash " .. tostring(msg.hash) .. " frames " .. tostring(msg.count or 0))
+        elseif msg.type == "asset_chunk" and msg.hash and msg.frames then
+            save_asset_chunk(tostring(msg.hash), msg.start, msg.frames)
+        elseif msg.type == "asset_done" and msg.hash then
+            finish_asset(tostring(msg.hash))
+            gif_cache[tostring(msg.hash)] = nil
+            log("asset ready hash " .. tostring(msg.hash))
+            for _, row in ipairs(net_players) do
+                ensure_tag(row)
+            end
         elseif msg.type == "asset_blob" and msg.hash and msg.frames then
             log("received asset hash " .. tostring(msg.hash) .. " with " .. tostring(#msg.frames) .. " frames")
             save_asset_blob(tostring(msg.hash), msg.frames)
+            gif_cache[tostring(msg.hash)] = nil
             for _, row in ipairs(net_players) do
                 ensure_tag(row)
             end

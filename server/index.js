@@ -334,16 +334,26 @@ function send_asset(ws, hash) {
   const folder = path.join(asset_dir, hash);
   const meta = read_json_file(path.join(folder, "meta.json"), null);
   if (!meta) return;
-  const frames = [];
+  const out = [];
   for (const row of meta.frames || []) {
     const full = path.join(folder, row.file);
     if (!fs.existsSync(full)) continue;
-    frames.push({
+    out.push({
       delay: Number(row.delay || 100),
       png64: fs.readFileSync(full).toString("base64")
     });
   }
-  ws_send(ws, { type: "asset_blob", hash, frames });
+  ws_send(ws, { type: "asset_start", hash, count: out.length });
+  const size = 12;
+  for (let i = 0; i < out.length; i += size) {
+    ws_send(ws, {
+      type: "asset_chunk",
+      hash,
+      start: i,
+      frames: out.slice(i, i + size)
+    });
+  }
+  ws_send(ws, { type: "asset_done", hash });
 }
 
 app.get("/", (req, res) => {
