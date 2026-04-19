@@ -2,45 +2,30 @@ local players = game:GetService("Players")
 local run = game:GetService("RunService")
 local input = game:GetService("UserInputService")
 local local_player = players.LocalPlayer
-local set_id = setthreadidentity or set_thread_identity or setidentity
-local get_id = getthreadidentity or get_thread_identity or getidentity
-
-local function call_hidden(fn)
-    if type(fn) ~= "function" then return nil end
-    if type(set_id) ~= "function" then
-        local ok, out = pcall(fn)
-        if ok then return out end
-        return nil
-    end
-    local old = nil
-    if type(get_id) == "function" then
-        local ok_old, out_old = pcall(get_id)
-        if ok_old then old = out_old end
-    end
-    local ok_set = pcall(set_id, 8)
-    local ok, out = pcall(fn)
-    if old ~= nil then
-        pcall(set_id, old)
-    elseif ok_set then
-        pcall(set_id, 2)
-    end
-    if ok then return out end
-    return nil
-end
+local ui_folder_name = "_client_remote_tags"
+local player_gui = local_player:FindFirstChildOfClass("PlayerGui") or local_player:WaitForChild("PlayerGui")
 
 local function pick_ui_parent()
     local options = { gethui, get_hidden_gui, gethiddengui }
     for _, fn in ipairs(options) do
-        local parent = call_hidden(fn)
-        if parent then return parent end
+        if type(fn) == "function" then
+            local ok, parent = pcall(fn)
+            if ok and parent then
+                return parent
+            end
+        end
     end
-    return nil
+    local folder = player_gui:FindFirstChild(ui_folder_name)
+    if not folder then
+        folder = Instance.new("ScreenGui")
+        folder.Name = ui_folder_name
+        folder.ResetOnSpawn = false
+        folder.Parent = player_gui
+    end
+    return folder
 end
 
 local gui_parent = pick_ui_parent()
-if not gui_parent then
-    return
-end
 
 local ws_host = "wss://ugh.rawth.net"
 local ws_url = ""
@@ -73,6 +58,9 @@ local net_players = {}
 local cache_known = {}
 local tags = {}
 local gif_jobs = {}
+local function log(text)
+    print("[client] " .. tostring(text))
+end
 local b64_map = {}
 do
     local set = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -121,6 +109,8 @@ end
 
 local session_id = make_session()
 ws_url = ws_host .. "/live/" .. session_id
+log("loaded")
+log("default tags ready")
 
 local function parse_color(hex, fallback)
     local raw = tostring(hex or ""):gsub("#", "")
@@ -425,14 +415,17 @@ end
 local function bind_socket(sock)
     ws = sock
     ws_last = tick()
+    log("websocket connected")
     sock.OnMessage:Connect(function(raw)
         ws_last = tick()
         local msg = decode_json(raw)
         if type(msg) ~= "table" then return end
         if msg.type == "state" and type(msg.players) == "table" then
             net_players = msg.players
+            log("found " .. tostring(#net_players) .. " total users connected to websocket")
             if type(msg.defaults) == "table" then
                 cfg_default = normalize_tag(msg.defaults)
+                log("loaded default tags")
             end
             for _, row in ipairs(net_players) do
                 ensure_tag(row)
@@ -441,19 +434,26 @@ local function bind_socket(sock)
             pull_missing_hashes()
         elseif msg.type == "you" and type(msg.tag) == "table" then
             cfg_you = normalize_tag(msg.tag)
+            log("found custom nametag for localplayer")
         elseif msg.type == "asset_blob" and msg.hash and msg.frames then
+            log("received asset hash " .. tostring(msg.hash) .. " with " .. tostring(#msg.frames) .. " frames")
             save_asset_blob(tostring(msg.hash), msg.frames)
             for _, row in ipairs(net_players) do
                 ensure_tag(row)
             end
         elseif msg.type == "bye" then
+            log("server rejected hello")
             pcall(function() sock:Close() end)
         end
     end)
     sock.OnClose:Connect(function()
-        if ws == sock then ws = nil end
+        if ws == sock then
+            ws = nil
+            log("websocket closed")
+        end
     end)
     sock:Send(encode_json(hello_payload()))
+    log("hello sent")
 end
 
 local function connect_loop()
@@ -471,6 +471,8 @@ local function connect_loop()
                     end)
                     if ok and sock then
                         bind_socket(sock)
+                    else
+                        log("connect failed")
                     end
                 end
             end
@@ -521,10 +523,10 @@ end)
 connect_loop()
 
 run.Heartbeat:Connect(function()
-    if not screen.Parent then
-        local next_parent = pick_ui_parent()
-        if next_parent then
-            screen.Parent = next_parent
-        end
+    if player_gui.Parent == nil then
+        player_gui = local_player:FindFirstChildOfClass("PlayerGui") or local_player:WaitForChild("PlayerGui")
+    end
+    if not screen.Parent or screen.Parent.Parent == nil then
+        screen.Parent = pick_ui_parent()
     end
 end)

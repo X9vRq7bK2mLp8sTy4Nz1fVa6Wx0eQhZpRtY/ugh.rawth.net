@@ -84,6 +84,19 @@ function read_json(raw, fallback) {
   }
 }
 
+function read_json_file(file, fallback) {
+  try {
+    if (!fs.existsSync(file)) return fallback;
+    return read_json(fs.readFileSync(file, "utf8"), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function write_json_file(file, value) {
+  fs.writeFileSync(file, JSON.stringify(value), "utf8");
+}
+
 async function extract_gif(buffer) {
   const data = await gifFrames({
     url: buffer,
@@ -110,11 +123,11 @@ async function extract_gif(buffer) {
 
 function get_mime(buffer) {
   const a = buffer.subarray(0, 4).toString("hex");
-  const b = buffer.subarray(0, 6).toString("ascii");
+  const b = buffer.subarray(0, 4).toString("ascii");
   if (a === "89504e47") return "png";
   if (buffer.subarray(0, 3).toString("hex") === "474946") return "gif";
   if (a === "ffd8ffe0" || a === "ffd8ffe1" || a === "ffd8ffe8") return "jpg";
-  if (b === "RIFF??".replace("??", "")) return "webp";
+  if (b === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "webp";
   return "bin";
 }
 
@@ -123,7 +136,7 @@ async function store_upload(buffer) {
   const folder = path.join(asset_dir, hash);
   const meta_file = path.join(folder, "meta.json");
   if (fs.existsSync(meta_file)) {
-    const meta = read_json(meta_file, null);
+    const meta = read_json_file(meta_file, null);
     if (meta) return meta;
   }
   fs.mkdirSync(folder, { recursive: true });
@@ -142,7 +155,7 @@ async function store_upload(buffer) {
     info.push({ file: name, delay: frames[i].delay });
   }
   const meta = { hash, frames: info, count: info.length };
-  write_json(meta_file, meta);
+  write_json_file(meta_file, meta);
   return meta;
 }
 
@@ -325,7 +338,7 @@ function broadcast_state() {
 
 function send_asset(ws, hash) {
   const folder = path.join(asset_dir, hash);
-  const meta = read_json(path.join(folder, "meta.json"), null);
+  const meta = read_json_file(path.join(folder, "meta.json"), null);
   if (!meta) return;
   const frames = [];
   for (const row of meta.frames || []) {
@@ -351,31 +364,23 @@ app.get("/api/list", (req, res) => {
 
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file || !req.file.buffer) return res.status(400).json({ ok: false });
+    if (!req.file || !req.file.buffer) return res.status(400).json({ ok: false, code: "upload_missing_file" });
+    const kind = get_mime(req.file.buffer);
+    if (kind === "bin") return res.status(400).json({ ok: false, code: "upload_bad_type" });
     const meta = await store_upload(req.file.buffer);
-    res.json({ ok: true, hash: meta.hash, count: meta.count });
-  } catch {
-    res.status(500).json({ ok: false });
+    res.json({ ok: true, hash: meta.hash, count: meta.count, kind });
+  } catch (err) {
+    res.status(500).json({ ok: false, code: "upload_failed", detail: String(err && err.message || "error") });
   }
 });
 
 app.post("/api/defaults", (req, res) => {
-  const defaults = db_get_defaults();
-  const next = {
-    icon: asset_pick(req.body.icon) || defaults.icon,
-    background: asset_pick(req.body.background) || defaults.background,
-    text: safe_text(req.body.text || defaults.text, 40),
-    text_color: safe_color(req.body.text_color || defaults.text_color, "#FFFFFF"),
-    line_color: safe_color(req.body.line_color || defaults.line_color, "#8F8F91")
-  };
-  db_set_defaults(next);
-  broadcast_state();
-  res.json({ ok: true });
+  res.status(403).json({ ok: false, code: "defaults_locked" });
 });
 
 app.post("/api/set", (req, res) => {
   const username = clean_name(req.body.username).toLowerCase();
-  if (!username) return res.status(400).json({ ok: false });
+  if (!username) return res.status(400).json({ ok: false, code: "bad_username" });
   const defaults = db_get_defaults();
   const row = {
     text: safe_text(req.body.text || "", 40),
@@ -391,7 +396,7 @@ app.post("/api/set", (req, res) => {
 
 app.post("/api/remove", (req, res) => {
   const username = clean_name(req.body.username).toLowerCase();
-  if (!username) return res.status(400).json({ ok: false });
+  if (!username) return res.status(400).json({ ok: false, code: "bad_username" });
   db_remove_tag(username);
   broadcast_state();
   res.json({ ok: true });

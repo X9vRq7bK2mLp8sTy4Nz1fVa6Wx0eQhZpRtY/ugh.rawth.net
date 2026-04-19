@@ -3,35 +3,40 @@
 <head>
   <meta charset="utf-8">
   <title>client</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 </head>
 <body>
   <h3>client</h3>
-
-  <h4>upload image or gif</h4>
-  <form id="up">
-    <input type="file" name="file" required>
-    <button>upload</button>
-  </form>
-  <div id="up_out"></div>
+  <p>default nametag is always active for everyone connected</p>
 
   <h4>set user tag</h4>
   <form id="set">
     <input name="username" placeholder="username" required>
-    <input name="text" placeholder="text">
-    <input name="text_color" placeholder="#FFFFFF">
-    <input name="line_color" placeholder="#8F8F91">
+    <input name="text" placeholder="title text">
+    <label>text color</label>
+    <input type="color" name="text_color" value="#ffffff">
+    <label>line color</label>
+    <input type="color" name="line_color" value="#8f8f91">
+    <br>
+    <label>icon source</label>
     <select name="icon_mode">
-      <option value="">icon none</option>
-      <option value="rbx">icon rbx</option>
-      <option value="hash">icon hash</option>
+      <option value="keep">keep default</option>
+      <option value="upload">upload image/gif</option>
+      <option value="rbx">rbx asset id</option>
     </select>
-    <input name="icon_value" placeholder="icon value">
+    <input name="icon_value" placeholder="rbx id if selected">
+    <input type="file" name="icon_file" accept=".png,.jpg,.jpeg,.webp,.gif">
+    <br>
+    <label>background source</label>
     <select name="bg_mode">
-      <option value="">bg none</option>
-      <option value="rbx">bg rbx</option>
-      <option value="hash">bg hash</option>
+      <option value="keep">keep default</option>
+      <option value="upload">upload image/gif</option>
+      <option value="rbx">rbx asset id</option>
     </select>
-    <input name="bg_value" placeholder="background value">
+    <input name="bg_value" placeholder="rbx id if selected">
+    <input type="file" name="bg_file" accept=".png,.jpg,.jpeg,.webp,.gif">
+    <br>
     <button>save</button>
   </form>
 
@@ -41,32 +46,42 @@
     <button>remove</button>
   </form>
 
-  <h4>set defaults</h4>
-  <form id="def">
-    <input name="text" placeholder="default text">
-    <input name="text_color" placeholder="#FFFFFF">
-    <input name="line_color" placeholder="#8F8F91">
-    <select name="icon_mode">
-      <option value="rbx">icon rbx</option>
-      <option value="hash">icon hash</option>
-    </select>
-    <input name="icon_value" placeholder="icon value">
-    <select name="bg_mode">
-      <option value="rbx">bg rbx</option>
-      <option value="hash">bg hash</option>
-    </select>
-    <input name="bg_value" placeholder="background value">
-    <button>defaults save</button>
-  </form>
-
-  <h4>current rows</h4>
+  <h4>current rows and defaults</h4>
   <button id="reload">reload</button>
   <pre id="rows"></pre>
 
   <script>
-    function asset(mode, value) {
-      if (!mode || !value) return null;
-      return { mode, value };
+    function toast_ok(text) {
+      Toastify({ text, gravity: "top", position: "right", duration: 2500, close: true }).showToast();
+    }
+
+    function toast_err(code, payload) {
+      const box = document.createElement("div");
+      const title = document.createElement("div");
+      const pre = document.createElement("pre");
+      const btn = document.createElement("button");
+      title.textContent = "request failed";
+      pre.textContent = JSON.stringify({ code, payload }, null, 2);
+      btn.textContent = "copy";
+      btn.onclick = async () => {
+        await navigator.clipboard.writeText(pre.textContent);
+        toast_ok("copied");
+      };
+      box.appendChild(title);
+      box.appendChild(pre);
+      box.appendChild(btn);
+      Toastify({
+        node: box,
+        gravity: "top",
+        position: "right",
+        duration: 7000,
+        close: true
+      }).showToast();
+    }
+
+    function as_asset(mode, value) {
+      if (mode === "rbx" && value) return { mode: "rbx", value };
+      return null;
     }
 
     async function post(url, body) {
@@ -75,54 +90,74 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      return r.json();
+      const j = await r.json();
+      if (!j.ok) toast_err(j.code || "request_failed", j);
+      return j;
     }
 
-    document.getElementById("up").onsubmit = async (e) => {
-      e.preventDefault();
-      const data = new FormData(e.target);
+    async function upload_file(file) {
+      const data = new FormData();
+      data.set("file", file);
       const r = await fetch("/api/upload", { method: "POST", body: data });
       const j = await r.json();
-      document.getElementById("up_out").textContent = JSON.stringify(j);
-    };
+      if (!j.ok) {
+        toast_err(j.code || "upload_failed", j);
+        return null;
+      }
+      toast_ok("uploaded hash " + j.hash);
+      return j.hash;
+    }
 
     document.getElementById("set").onsubmit = async (e) => {
       e.preventDefault();
       const d = new FormData(e.target);
+      let icon = as_asset(d.get("icon_mode"), d.get("icon_value"));
+      let background = as_asset(d.get("bg_mode"), d.get("bg_value"));
+      if (d.get("icon_mode") === "upload") {
+        const f = d.get("icon_file");
+        if (!f || !f.size) return toast_err("icon_file_missing", {});
+        const hash = await upload_file(f);
+        if (!hash) return;
+        icon = { mode: "hash", value: hash };
+      }
+      if (d.get("bg_mode") === "upload") {
+        const f = d.get("bg_file");
+        if (!f || !f.size) return toast_err("background_file_missing", {});
+        const hash = await upload_file(f);
+        if (!hash) return;
+        background = { mode: "hash", value: hash };
+      }
       const j = await post("/api/set", {
         username: d.get("username"),
         text: d.get("text"),
         text_color: d.get("text_color"),
         line_color: d.get("line_color"),
-        icon: asset(d.get("icon_mode"), d.get("icon_value")),
-        background: asset(d.get("bg_mode"), d.get("bg_value"))
+        icon,
+        background
       });
-      alert(JSON.stringify(j));
+      if (j.ok) {
+        toast_ok("saved");
+        load_rows();
+      }
     };
 
     document.getElementById("rm").onsubmit = async (e) => {
       e.preventDefault();
       const d = new FormData(e.target);
       const j = await post("/api/remove", { username: d.get("username") });
-      alert(JSON.stringify(j));
-    };
-
-    document.getElementById("def").onsubmit = async (e) => {
-      e.preventDefault();
-      const d = new FormData(e.target);
-      const j = await post("/api/defaults", {
-        text: d.get("text"),
-        text_color: d.get("text_color"),
-        line_color: d.get("line_color"),
-        icon: asset(d.get("icon_mode"), d.get("icon_value")),
-        background: asset(d.get("bg_mode"), d.get("bg_value"))
-      });
-      alert(JSON.stringify(j));
+      if (j.ok) {
+        toast_ok("removed");
+        load_rows();
+      }
     };
 
     async function load_rows() {
       const r = await fetch("/api/list");
       const j = await r.json();
+      if (!j.ok) {
+        toast_err(j.code || "load_failed", j);
+        return;
+      }
       document.getElementById("rows").textContent = JSON.stringify(j, null, 2);
     }
 
