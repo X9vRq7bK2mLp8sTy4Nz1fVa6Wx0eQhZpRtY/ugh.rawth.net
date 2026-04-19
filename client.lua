@@ -348,14 +348,16 @@ local function apply_gui(item, row)
     local bg_sig = tostring(merged.background.mode or "") .. ":" .. tostring(merged.background.value or "")
 
     local icon_image, need_icon = resolve_asset(merged.icon)
+    local icon_ready = icon_image ~= nil or merged.icon.mode ~= "hash"
     if icon_image and item.icon_sig ~= icon_sig then item.icon.Image = icon_image end
     if need_icon then cache_known[need_icon] = true end
 
     local bg_image, need_bg = resolve_asset(merged.background)
+    local bg_ready = bg_image ~= nil or merged.background.mode ~= "hash"
     if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
     if need_bg then cache_known[need_bg] = true end
 
-    if item.icon_sig ~= icon_sig then
+    if item.icon_sig ~= icon_sig and icon_ready then
         if merged.icon.mode == "hash" then
             play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon)
         else
@@ -363,7 +365,7 @@ local function apply_gui(item, row)
         end
         item.icon_sig = icon_sig
     end
-    if item.bg_sig ~= bg_sig then
+    if item.bg_sig ~= bg_sig and bg_ready then
         if merged.background.mode == "hash" then
             play_gif("bg_" .. tostring(row.userid), item.background, merged.background)
             item.background.ImageTransparency = 0
