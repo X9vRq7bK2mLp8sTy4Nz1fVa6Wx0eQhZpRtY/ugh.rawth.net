@@ -177,8 +177,11 @@ local function switch_cache_rev(next_rev)
     gif_cache = {}
     asset_ids = {}
     pending_asset = {}
-    for key in pairs(gif_jobs) do
-        stop_gif(key)
+    for key, job in pairs(gif_jobs) do
+        if job then
+            job.live = false
+        end
+        gif_jobs[key] = nil
     end
     log("cache rev " .. tostring(cache_rev))
 end
