@@ -126,7 +126,7 @@ function get_mime(buffer) {
   const b = buffer.subarray(0, 4).toString("ascii");
   if (a === "89504e47") return "png";
   if (buffer.subarray(0, 3).toString("hex") === "474946") return "gif";
-  if (a === "ffd8ffe0" || a === "ffd8ffe1" || a === "ffd8ffe8") return "jpg";
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpg";
   if (b === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "webp";
   return "bin";
 }
@@ -379,7 +379,14 @@ app.get("/api/list", (req, res) => {
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) return res.status(400).json({ ok: false, code: "upload_missing_file" });
-    const kind = get_mime(req.file.buffer);
+    let kind = get_mime(req.file.buffer);
+    if (kind === "bin") {
+      const mime = String(req.file.mimetype || "").toLowerCase();
+      if (mime === "image/jpeg" || mime === "image/jpg" || mime === "image/pjpeg") kind = "jpg";
+      else if (mime === "image/png") kind = "png";
+      else if (mime === "image/gif") kind = "gif";
+      else if (mime === "image/webp") kind = "webp";
+    }
     if (kind === "bin") return res.status(400).json({ ok: false, code: "upload_bad_type" });
     const meta = await store_upload(req.file.buffer);
     res.json({ ok: true, hash: meta.hash, count: meta.count, kind });
@@ -411,6 +418,7 @@ app.post("/api/set", (req, res) => {
     row.background = asset_pick(req.body.background);
   }
   db_set_tag(username, row);
+  log_line(`set tag username=${username} icon=${JSON.stringify(row.icon)} background=${JSON.stringify(row.background)}`);
   db_bump_cache_rev();
   broadcast_state();
   res.json({ ok: true, tag: row });
