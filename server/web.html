@@ -21,18 +21,20 @@
     <br>
     <label>icon source</label>
     <select name="icon_mode">
-      <option value="keep">keep default</option>
+      <option value="keep">keep current</option>
       <option value="upload">upload image/gif</option>
       <option value="rbx">rbx asset id</option>
+      <option value="default">reset to default</option>
     </select>
     <input name="icon_value" placeholder="rbx id if selected">
     <input type="file" name="icon_file" accept=".png,.jpg,.jpeg,.webp,.gif">
     <br>
     <label>background source</label>
     <select name="bg_mode">
-      <option value="keep">keep default</option>
+      <option value="keep">keep current</option>
       <option value="upload">upload image/gif</option>
       <option value="rbx">rbx asset id</option>
+      <option value="default">reset to default</option>
     </select>
     <input name="bg_value" placeholder="rbx id if selected">
     <input type="file" name="bg_file" accept=".png,.jpg,.jpeg,.webp,.gif">
@@ -134,14 +136,17 @@
         if (!hash) return;
         background = { mode: "hash", value: hash };
       }
-      const j = await post("/api/set", {
+      const body = {
         username: d.get("username"),
         text: d.get("text"),
         text_color: d.get("text_color"),
-        line_color: d.get("line_color"),
-        icon,
-        background
-      });
+        line_color: d.get("line_color")
+      };
+      if (d.get("icon_mode") === "rbx" || d.get("icon_mode") === "upload") body.icon = icon;
+      if (d.get("icon_mode") === "default") body.icon = null;
+      if (d.get("bg_mode") === "rbx" || d.get("bg_mode") === "upload") body.background = background;
+      if (d.get("bg_mode") === "default") body.background = null;
+      const j = await post("/api/set", body);
       if (j.ok) {
         toast_ok("saved");
         load_rows();

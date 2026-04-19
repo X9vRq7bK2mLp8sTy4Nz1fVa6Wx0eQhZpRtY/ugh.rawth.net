@@ -396,17 +396,24 @@ app.post("/api/set", (req, res) => {
   const username = clean_name(req.body.username).toLowerCase();
   if (!username) return res.status(400).json({ ok: false, code: "bad_username" });
   const defaults = db_get_defaults();
+  const prev = db_get_tag(username) || {};
   const row = {
-    text: safe_text(req.body.text || "", 40),
-    text_color: safe_color(req.body.text_color || "", defaults.text_color),
-    line_color: safe_color(req.body.line_color || "", defaults.line_color),
-    icon: asset_pick(req.body.icon),
-    background: asset_pick(req.body.background)
+    text: safe_text(req.body.text || prev.text || "", 40),
+    text_color: safe_color(req.body.text_color || prev.text_color || "", defaults.text_color),
+    line_color: safe_color(req.body.line_color || prev.line_color || "", defaults.line_color),
+    icon: prev.icon || null,
+    background: prev.background || null
   };
+  if (Object.prototype.hasOwnProperty.call(req.body, "icon")) {
+    row.icon = asset_pick(req.body.icon);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, "background")) {
+    row.background = asset_pick(req.body.background);
+  }
   db_set_tag(username, row);
   db_bump_cache_rev();
   broadcast_state();
-  res.json({ ok: true });
+  res.json({ ok: true, tag: row });
 });
 
 app.post("/api/remove", (req, res) => {
