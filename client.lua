@@ -452,7 +452,17 @@ local function hide_default_name(player)
     hum.HealthDisplayDistance = 0
 end
 
+local function is_valid_row(row)
+    if type(row) ~= "table" then return false end
+    local uid = tonumber(row.userid)
+    if not uid or uid < 1 then return false end
+    local username = tostring(row.username or "")
+    if username == "" then return false end
+    return true
+end
+
 local function ensure_tag(row)
+    if not is_valid_row(row) then return end
     local id = tostring(row.userid)
     local one = tags[id]
     if not one then
@@ -466,10 +476,12 @@ end
 local function clear_missing(current)
     local keep = {}
     for _, row in ipairs(current) do
-        keep[tostring(row.userid)] = true
+        if is_valid_row(row) then
+            keep[tostring(row.userid)] = true
+        end
     end
     for id, one in pairs(tags) do
-        if not keep[id] then
+        if not keep[id] or tonumber(id) == nil then
             stop_gif("icon_" .. id)
             stop_gif("bg_" .. id)
             one.bb:Destroy()
@@ -581,7 +593,13 @@ local function bind_socket(sock)
         local msg = decode_json(raw)
         if type(msg) ~= "table" then return end
         if msg.type == "state" and type(msg.players) == "table" then
-            net_players = msg.players
+            local list = {}
+            for _, row in ipairs(msg.players) do
+                if is_valid_row(row) then
+                    list[#list + 1] = row
+                end
+            end
+            net_players = list
             log("found " .. tostring(#net_players) .. " total users connected to websocket")
             switch_cache_rev(msg.cache_rev)
             if type(msg.defaults) == "table" then

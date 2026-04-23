@@ -9,7 +9,9 @@ const {
   AttachmentBuilder,
   MessageFlags,
   ContainerBuilder,
-  TextDisplayBuilder
+  TextDisplayBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder
 } = require("discord.js");
 const { createCanvas, loadImage } = require("@napi-rs/canvas");
 
@@ -196,7 +198,7 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine }) {
     .setName("lookup")
     .setDescription("Render a user nametag preview")
     .addStringOption((o) =>
-      o.setName("username").setDescription("Roblox username").setRequired(true)
+      o.setName("username").setDescription("meow").setRequired(true)
     );
 
   client.once("ready", async () => {
@@ -238,12 +240,16 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine }) {
       const custom = row ? JSON.parse(row.payload) : null;
       const merged = mergeTag(defaults || defaultsFallback, custom, username);
       const png = await renderTagImage(assetDir, merged);
-      const file = new AttachmentBuilder(png, { name: `nametag-${username.toLowerCase()}.png` });
+      const fileName = `nametag-${username.toLowerCase()}.png`;
+      const file = new AttachmentBuilder(png, { name: fileName });
       await interaction.reply({
         flags: MessageFlags.IsComponentsV2,
         components: [
           new ContainerBuilder().addTextDisplayComponents(
             new TextDisplayBuilder().setContent(`Found custom nametag for ${username}!`)
+          ),
+          new MediaGalleryBuilder().addItems(
+            new MediaGalleryItemBuilder().setURL(`attachment://${fileName}`)
           )
         ],
         files: [file]
