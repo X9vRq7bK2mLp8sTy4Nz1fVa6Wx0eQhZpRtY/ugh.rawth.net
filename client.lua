@@ -395,8 +395,8 @@ local function apply_gui(item, row)
     if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
     if need_bg then cache_known[need_bg] = true end
 
-    if item.icon_sig ~= icon_sig then
-        if icon_ready then
+    if icon_ready then
+        if item.icon_sig ~= icon_sig then
             item.icon_gen += 1
             if merged.icon.mode == "hash" then
                 play_gif("icon_" .. tostring(row.userid), item.icon, merged.icon, item, "icon_gen", item.icon_gen, "icon")
@@ -404,17 +404,17 @@ local function apply_gui(item, row)
                 stop_gif("icon_" .. tostring(row.userid))
             end
             item.icon_sig = icon_sig
-        else
-            if item.icon_sig == "" then
-                item.icon_gen += 1
-                stop_gif("icon_" .. tostring(row.userid))
-                item.icon.Image = ""
-            end
-            item.icon_sig = icon_sig
+        end
+    else
+        if item.icon_sig ~= "" then
+            item.icon_gen += 1
+            stop_gif("icon_" .. tostring(row.userid))
+            item.icon.Image = ""
+            item.icon_sig = ""
         end
     end
-    if item.bg_sig ~= bg_sig then
-        if bg_ready then
+    if bg_ready then
+        if item.bg_sig ~= bg_sig then
             item.bg_gen += 1
             if merged.background.mode == "hash" then
                 play_gif("bg_" .. tostring(row.userid), item.background, merged.background, item, "bg_gen", item.bg_gen, "bg")
@@ -424,14 +424,14 @@ local function apply_gui(item, row)
                 item.background.ImageTransparency = 0.12
             end
             item.bg_sig = bg_sig
-        else
-            if item.bg_sig == "" then
-                item.bg_gen += 1
-                stop_gif("bg_" .. tostring(row.userid))
-                item.background.Image = ""
-                item.background.ImageTransparency = 0
-            end
-            item.bg_sig = bg_sig
+        end
+    else
+        if item.bg_sig ~= "" then
+            item.bg_gen += 1
+            stop_gif("bg_" .. tostring(row.userid))
+            item.background.Image = ""
+            item.background.ImageTransparency = 0
+            item.bg_sig = ""
         end
     end
 end
@@ -488,6 +488,21 @@ local function pull_missing_hashes()
     if #need > 0 and ws then
         ws:Send(encode_json({ type = "asset_need", hashes = need }))
     end
+end
+
+local function queue_missing_from_asset(raw)
+    if type(raw) ~= "table" or raw.mode ~= "hash" then return end
+    local hash = tostring(raw.value or "")
+    if hash == "" then return end
+    if not asset_path_from_hash(hash) then
+        cache_known[hash] = true
+    end
+end
+
+local function queue_missing_from_tag(tag)
+    if type(tag) ~= "table" then return end
+    queue_missing_from_asset(tag.icon)
+    queue_missing_from_asset(tag.background)
 end
 
 local function save_asset_blob(hash, frames)
@@ -574,13 +589,16 @@ local function bind_socket(sock)
                 log("loaded default tags")
             end
             for _, row in ipairs(net_players) do
+                queue_missing_from_tag(row)
                 ensure_tag(row)
             end
             clear_missing(net_players)
             pull_missing_hashes()
         elseif msg.type == "you" and type(msg.tag) == "table" then
             cfg_you = normalize_tag(msg.tag)
+            queue_missing_from_tag(msg.tag)
             switch_cache_rev(msg.cache_rev)
+            pull_missing_hashes()
             log("found custom nametag for localplayer")
         elseif msg.type == "asset_start" and msg.hash then
             begin_asset(tostring(msg.hash), msg.count)
@@ -594,6 +612,7 @@ local function bind_socket(sock)
             for _, row in ipairs(net_players) do
                 ensure_tag(row)
             end
+            pull_missing_hashes()
         elseif msg.type == "asset_blob" and msg.hash and msg.frames then
             log("received asset hash " .. tostring(msg.hash) .. " with " .. tostring(#msg.frames) .. " frames")
             task.spawn(function()
@@ -603,6 +622,7 @@ local function bind_socket(sock)
                     ensure_tag(row)
                     task.wait()
                 end
+                pull_missing_hashes()
             end)
         elseif msg.type == "bye" then
             log("server rejected hello code " .. tostring(msg.code or "reject") .. " detail " .. tostring(msg.detail or ""))

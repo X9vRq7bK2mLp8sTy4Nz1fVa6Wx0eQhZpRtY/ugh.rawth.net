@@ -8,6 +8,7 @@ const multer = require("multer");
 const WebSocket = require("ws");
 const gifFrames = require("gif-frames");
 const Database = require("better-sqlite3");
+const { initDiscordBot } = require("./discord-bot");
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve(__dirname, "..");
@@ -527,4 +528,11 @@ wss.on("connection", (ws, req) => {
 server.listen(port, () => {
   process.stdout.write(`client backend on ${port}\n`);
   log_line(`ready port=${port}`);
+});
+
+initDiscordBot({
+  db,
+  assetDir: asset_dir,
+  defaultsFallback: defaults_fallback,
+  logLine: log_line
 });
