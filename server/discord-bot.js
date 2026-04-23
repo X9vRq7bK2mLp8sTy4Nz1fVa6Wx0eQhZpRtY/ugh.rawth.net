@@ -14,6 +14,7 @@ const {
   MediaGalleryItemBuilder
 } = require("discord.js");
 const { createCanvas, loadImage } = require("@napi-rs/canvas");
+const rbxAssetUrlCache = new Map();
 
 function safeText(text, max) {
   return String(text || "")
@@ -58,6 +59,30 @@ function roundRect(ctx, x, y, w, h, r) {
 
 async function tryLoadAssetImage(assetDir, rawAsset) {
   if (!rawAsset || typeof rawAsset !== "object") return null;
+  if (rawAsset.mode === "rbx") {
+    const id = String(rawAsset.value || "").replace("rbxassetid://", "").trim();
+    if (!/^\d{2,20}$/.test(id)) return null;
+    let imageUrl = rbxAssetUrlCache.get(id);
+    if (!imageUrl) {
+      try {
+        const res = await fetch(`https://thumbnails.roblox.com/v1/assets?assetIds=${encodeURIComponent(id)}&size=420x420&format=Png&isCircular=false`);
+        if (res.ok) {
+          const body = await res.json();
+          const one = body && Array.isArray(body.data) && body.data[0];
+          if (one && typeof one.imageUrl === "string" && one.imageUrl) {
+            imageUrl = one.imageUrl;
+            rbxAssetUrlCache.set(id, imageUrl);
+          }
+        }
+      } catch {}
+    }
+    if (!imageUrl) return null;
+    try {
+      return await loadImage(imageUrl);
+    } catch {
+      return null;
+    }
+  }
   if (rawAsset.mode === "hash") {
     const hash = String(rawAsset.value || "");
     if (!/^[0-9]{6,24}$/.test(hash)) return null;
@@ -172,12 +197,12 @@ async function renderTagImage(assetDir, merged) {
   }
 
   ctx.fillStyle = `rgba(${textColor.r},${textColor.g},${textColor.b},1)`;
-  ctx.font = `bold ${14 * scale}px sans-serif`;
+  ctx.font = `bold ${14 * scale}px "DejaVu Sans"`;
   ctx.textBaseline = "top";
   ctx.fillText(merged.text, 40 * scale, 4 * scale);
 
   ctx.fillStyle = "rgba(180,180,180,1)";
-  ctx.font = `bold ${10 * scale}px sans-serif`;
+  ctx.font = `bold ${10 * scale}px "DejaVu Sans"`;
   ctx.fillText(`@${merged.username}`, 40 * scale, 20 * scale);
 
   return canvas.toBuffer("image/png");

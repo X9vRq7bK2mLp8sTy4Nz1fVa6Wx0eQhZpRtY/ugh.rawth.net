@@ -467,6 +467,7 @@ local function ensure_tag(row)
     local one = tags[id]
     if not one then
         one = build_gui(id)
+        one.bb.Enabled = false
         one.bb.Parent = screen
         tags[id] = one
     end
@@ -697,32 +698,41 @@ end
 
 run.RenderStepped:Connect(function()
     for _, row in ipairs(net_players) do
-        local player = players:FindFirstChild(row.username)
-        if player then
-            hide_default_name(player)
-            local head = find_head(player)
-            local one = tags[tostring(row.userid)]
-            if one and head then
-                one.bb.Adornee = head
-                one.bb.StudsOffsetWorldSpace = Vector3.new(0, 1.9, 0)
-                local cam = workspace.CurrentCamera
-                if cam then
-                    local depth = (cam.CFrame.Position - head.Position).Magnitude
-                    local mini = depth > 60
-                    if mini then
-                        one.bb.Size = UDim2.new(0, 44, 0, 44)
-                        one.title.Visible = false
-                        one.user.Visible = false
-                        one.icon.Size = UDim2.new(0, 32, 0, 32)
-                        one.icon.Position = UDim2.new(0.5, -16, 0.5, -16)
-                    else
-                        one.bb.Size = UDim2.new(0, 170, 0, 42)
-                        one.title.Visible = true
-                        one.user.Visible = true
-                        one.icon.Size = UDim2.new(0, 28, 0, 28)
-                        one.icon.Position = UDim2.new(0, 7, 0.5, -14)
+        local one = tags[tostring(row.userid)]
+        if one then
+            local player = players:FindFirstChild(row.username)
+            if player then
+                hide_default_name(player)
+                local head = find_head(player)
+                if head then
+                    one.bb.Enabled = true
+                    one.bb.Adornee = head
+                    one.bb.StudsOffsetWorldSpace = Vector3.new(0, 1.9, 0)
+                    local cam = workspace.CurrentCamera
+                    if cam then
+                        local depth = (cam.CFrame.Position - head.Position).Magnitude
+                        local mini = depth > 60
+                        if mini then
+                            one.bb.Size = UDim2.new(0, 44, 0, 44)
+                            one.title.Visible = false
+                            one.user.Visible = false
+                            one.icon.Size = UDim2.new(0, 32, 0, 32)
+                            one.icon.Position = UDim2.new(0.5, -16, 0.5, -16)
+                        else
+                            one.bb.Size = UDim2.new(0, 170, 0, 42)
+                            one.title.Visible = true
+                            one.user.Visible = true
+                            one.icon.Size = UDim2.new(0, 28, 0, 28)
+                            one.icon.Position = UDim2.new(0, 7, 0.5, -14)
+                        end
                     end
+                else
+                    one.bb.Enabled = false
+                    one.bb.Adornee = nil
                 end
+            else
+                one.bb.Enabled = false
+                one.bb.Adornee = nil
             end
         end
     end
