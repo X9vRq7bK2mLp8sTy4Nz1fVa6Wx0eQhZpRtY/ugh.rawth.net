@@ -534,5 +534,9 @@ initDiscordBot({
   db,
   assetDir: asset_dir,
   defaultsFallback: defaults_fallback,
-  logLine: log_line
+  logLine: log_line,
+  storeUpload: store_upload,
+  bumpCacheRev: db_bump_cache_rev,
+  broadcastState: broadcast_state,
+  activeUsers: by_userid
 });
