@@ -177,6 +177,7 @@ local function get_active_users(live)
 end
 
 local announcement_handler = nil
+local command_handlers
 
 local function show_announcement(message, duration_seconds)
     local text = tostring(message or ""):sub(1, 240)
@@ -237,12 +238,7 @@ local function send_command_request(target_user_id, command_name, payload)
     return false
 end
 
-cooldowns = cooldowns_view
-can_use_commands = can_use_commands
-get_active_users = get_active_users
-send_command_request = send_command_request
-show_announcement = show_announcement
-set_announcement_handler = function(fn)
+local function set_announcement_handler(fn)
     if type(fn) == "function" then
         announcement_handler = fn
         return true
@@ -253,6 +249,7 @@ set_announcement_handler = function(fn)
     end
     return false
 end
+
 command_handlers = {
     freeze = function(payload) if type(doFreeze) == "function" then doFreeze(tonumber(payload.seconds) or 10) end end,
     unfreeze = function() if type(doUnfreeze) == "function" then doUnfreeze() end end,
@@ -264,6 +261,40 @@ command_handlers = {
     flip = function() if type(doFlip) == "function" then doFlip() end end,
     spasm = function() if type(doSpasm) == "function" then doSpasm() end end
 }
+
+local client_api = {
+    cooldowns = cooldowns_view,
+    can_use_commands = can_use_commands,
+    get_active_users = get_active_users,
+    send_command_request = send_command_request,
+    show_announcement = show_announcement,
+    set_announcement_handler = set_announcement_handler,
+    command_handlers = command_handlers
+}
+
+if type(shared) == "table" then
+    shared.nametags_client = client_api
+end
+if type(getgenv) == "function" then
+    local ok, env = pcall(getgenv)
+    if ok and type(env) == "table" then
+        env.nametags_client = client_api
+    end
+end
+if type(getrenv) == "function" then
+    local ok, env = pcall(getrenv)
+    if ok and type(env) == "table" then
+        env.nametags_client = client_api
+    end
+end
+
+cooldowns = client_api.cooldowns
+can_use_commands = client_api.can_use_commands
+get_active_users = client_api.get_active_users
+send_command_request = client_api.send_command_request
+show_announcement = client_api.show_announcement
+set_announcement_handler = client_api.set_announcement_handler
+command_handlers = client_api.command_handlers
 
 local function parse_color(hex, fallback)
     local raw = tostring(hex or ""):gsub("#", "")
@@ -952,3 +983,5 @@ run.Heartbeat:Connect(function()
         screen.Parent = pick_ui_parent()
     end
 end)
+
+return client_api
