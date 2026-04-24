@@ -377,13 +377,20 @@ function buildEffectPicker(field, username, currentValue) {
   const choices = isText
     ? [
         { label: "gradient", value: "gradient" },
+        { label: "wave", value: "wave" },
+        { label: "typewriter", value: "typewriter" },
         { label: "rainbow", value: "rainbow" },
+        { label: "glitch", value: "glitch" },
         { label: "none", value: "none" }
       ]
     : [
         { label: "matrix", value: "matrix" },
         { label: "pulse", value: "pulse" },
         { label: "scanline", value: "scanline" },
+        { label: "fire", value: "fire" },
+        { label: "glitch", value: "glitch" },
+        { label: "rainbow", value: "rainbow" },
+        { label: "snow", value: "snow" },
         { label: "glow", value: "glow" },
         { label: "none", value: "none" }
       ];
@@ -717,8 +724,8 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine, storeUpload, 
         if (field !== "text_effect" && field !== "bg_effect") return;
         const value = String(interaction.values && interaction.values[0] || "").toLowerCase();
         const allowed = field === "text_effect"
-          ? new Set(["gradient", "rainbow", "none"])
-          : new Set(["matrix", "pulse", "scanline", "glow", "none"]);
+          ? new Set(["gradient", "wave", "typewriter", "rainbow", "glitch", "none"])
+          : new Set(["matrix", "pulse", "scanline", "fire", "glitch", "rainbow", "snow", "glow", "none"]);
         if (!allowed.has(value)) return;
         const key = getDraftKey(interaction.user.id, username);
         const base = draftStore.get(key) || { username, tag: shallowClone(getTagByUsername(db, username) || {}), touchedAt: Date.now() };

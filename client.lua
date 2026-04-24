@@ -178,6 +178,21 @@ end
 
 local announcement_handler = nil
 local command_handlers
+local glitch_chars = { "!", "@", "#", "$", "%", "^", "&", "*", "~", "?" }
+
+local function scramble_text(text)
+    local raw = tostring(text or "")
+    if raw == "" then return raw end
+    local out = table.create(#raw)
+    for i = 1, #raw do
+        if math.random() < 0.15 then
+            out[i] = glitch_chars[math.random(1, #glitch_chars)]
+        else
+            out[i] = raw:sub(i, i)
+        end
+    end
+    return table.concat(out)
+end
 
 local function show_announcement(message, duration_seconds)
     local text = tostring(message or ""):sub(1, 240)
@@ -490,6 +505,7 @@ local function build_gui(name)
     background.Size = UDim2.new(1, 0, 1, 0)
     background.BackgroundTransparency = 1
     background.ImageTransparency = 0.22
+    background.ImageColor3 = Color3.new(1, 1, 1)
     background.ScaleType = Enum.ScaleType.Crop
     background.ZIndex = 1
     background.Parent = bg
@@ -544,7 +560,13 @@ local function build_gui(name)
         icon_gen = 0,
         bg_gen = 0,
         title_grad = title_grad,
-        effect_hue = 0
+        effect_hue = 0,
+        text_effect_name = "gradient",
+        bg_effect_name = "matrix",
+        title_base_text = "",
+        text_fx_t = tick(),
+        bg_fx_t = tick(),
+        line_base = Color3.fromRGB(143, 143, 145)
     }
 end
 
@@ -555,6 +577,16 @@ local function apply_gui(item, row)
     item.title.TextColor3 = merged.text_color
     item.user.Text = "@" .. tostring(row.username or "?")
     item.user.TextColor3 = Color3.fromRGB(180, 180, 180)
+    item.title_base_text = merged.text
+    item.line_base = merged.line_color
+    if item.text_effect_name ~= merged.text_effect then
+        item.text_effect_name = merged.text_effect
+        item.text_fx_t = tick()
+    end
+    if item.bg_effect_name ~= merged.bg_effect then
+        item.bg_effect_name = merged.bg_effect
+        item.bg_fx_t = tick()
+    end
     if merged.text_effect == "gradient" then
         item.title_grad.Enabled = true
         item.title_grad.Color = ColorSequence.new(
@@ -567,20 +599,13 @@ local function apply_gui(item, row)
         )
     elseif merged.text_effect == "rainbow" then
         item.title_grad.Enabled = true
-        item.effect_hue = (item.effect_hue + 0.01) % 1
+        item.effect_hue = (item.effect_hue + 0.02) % 1
         item.title_grad.Color = ColorSequence.new(
             Color3.fromHSV(item.effect_hue, 1, 1),
             Color3.fromHSV((item.effect_hue + 0.2) % 1, 1, 1)
         )
     else
         item.title_grad.Enabled = false
-    end
-    if merged.bg_effect == "pulse" then
-        item.background.ImageTransparency = 0.04 + (math.sin(tick() * 2.8) + 1) * 0.08
-    elseif merged.bg_effect == "scanline" then
-        item.background.ImageTransparency = 0.1 + (math.sin(tick() * 8.5) + 1) * 0.05
-    elseif merged.bg_effect == "glow" then
-        item.background.ImageTransparency = 0.02
     end
     local icon_sig = tostring(merged.icon.mode or "") .. ":" .. tostring(merged.icon.value or "")
     local bg_sig = tostring(merged.background.mode or "") .. ":" .. tostring(merged.background.value or "")
@@ -642,6 +667,74 @@ local function apply_gui(item, row)
             item.background.Image = ""
             item.background.ImageTransparency = 0
             item.bg_sig = ""
+        end
+    end
+end
+
+local function update_effects(item, now)
+    local text_fx = item.text_effect_name
+    local bg_fx = item.bg_effect_name
+    if text_fx == "wave" then
+        item.title.Text = item.title_base_text
+        item.title.Position = UDim2.new(0, 40, 0, 4 + math.sin(now * 5.5) * 1.8)
+        item.title.Rotation = math.sin(now * 4.3) * 2.8
+    elseif text_fx == "typewriter" then
+        local count = math.floor((now - item.text_fx_t) * 18)
+        local full = item.title_base_text
+        if count < 1 then
+            item.title.Text = ""
+        else
+            if count > #full then count = #full end
+            item.title.Text = full:sub(1, count)
+        end
+        item.title.Position = UDim2.new(0, 40, 0, 4)
+        item.title.Rotation = 0
+    elseif text_fx == "glitch" then
+        item.title.Text = scramble_text(item.title_base_text)
+        item.title.Position = UDim2.new(0, 40 + math.random(-1, 1), 0, 4 + math.random(-1, 1))
+        item.title.Rotation = math.random(-2, 2)
+    elseif text_fx == "rainbow" then
+        item.title.Text = item.title_base_text
+        item.title.Position = UDim2.new(0, 40, 0, 4)
+        item.title.Rotation = 0
+        item.effect_hue = (item.effect_hue + 0.015) % 1
+        item.title_grad.Enabled = true
+        item.title_grad.Color = ColorSequence.new(
+            Color3.fromHSV(item.effect_hue, 1, 1),
+            Color3.fromHSV((item.effect_hue + 0.2) % 1, 1, 1)
+        )
+    else
+        item.title.Text = item.title_base_text
+        item.title.Position = UDim2.new(0, 40, 0, 4)
+        item.title.Rotation = 0
+    end
+    if bg_fx == "matrix" then
+        item.background.ImageColor3 = Color3.fromHSV(0.34, 0.55, 0.85)
+        item.background.ImageTransparency = 0.08 + (math.sin(now * 6.5) + 1) * 0.08
+    elseif bg_fx == "pulse" then
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.04 + (math.sin(now * 2.8) + 1) * 0.08
+    elseif bg_fx == "scanline" then
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.1 + (math.sin(now * 8.5) + 1) * 0.05
+    elseif bg_fx == "fire" then
+        item.background.ImageColor3 = Color3.fromHSV(0.03 + math.sin(now * 3.4) * 0.02, 0.85, 1)
+        item.background.ImageTransparency = 0.05 + (math.sin(now * 4.5) + 1) * 0.06
+    elseif bg_fx == "glitch" then
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.05 + math.random() * 0.2
+    elseif bg_fx == "rainbow" then
+        item.effect_hue = (item.effect_hue + 0.01) % 1
+        item.stroke.Color = Color3.fromHSV(item.effect_hue, 1, 1)
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.08
+    elseif bg_fx == "snow" then
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.12 + (math.sin(now * 7.7) + 1) * 0.04
+    else
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        if item.stroke.Color ~= item.line_base then
+            item.stroke.Color = item.line_base
         end
     end
 end
@@ -926,6 +1019,7 @@ local function connect_loop()
 end
 
 run.RenderStepped:Connect(function()
+    local now = tick()
     for _, row in ipairs(net_players) do
         local one = tags[tostring(row.userid)]
         if one then
@@ -954,6 +1048,7 @@ run.RenderStepped:Connect(function()
                             one.icon.Position = UDim2.new(0, 7, 0.5, -14)
                         end
                     end
+                    update_effects(one, now)
                 else
                     one.bb.Enabled = false
                     one.bb.Adornee = nil

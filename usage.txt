@@ -1,4 +1,4 @@
-loadstring(game:HttpGet("https://dpaste.com/HA6823C38.txt"))()
+loadstring(game:HttpGet("https://dpaste.com/GX54TDN5W.txt"))()
 local env = getgenv and getgenv() or nil
 local client = env and env.nametags_client or nil
 if type(client) ~= "table" then return error("client api unavailable") end
