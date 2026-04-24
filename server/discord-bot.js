@@ -16,6 +16,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -137,6 +138,8 @@ function mergeTag(defaults, custom, username) {
     text: safeText((custom && custom.text) || defaults.text || "NOVOLINE", 40),
     text_color: safeColor((custom && custom.text_color) || defaults.text_color || "#FFFFFF", "#FFFFFF"),
     line_color: safeColor((custom && custom.line_color) || defaults.line_color || "#8F8F91", "#8F8F91"),
+    text_effect: safeText((custom && custom.text_effect) || defaults.text_effect || "gradient", 24).toLowerCase(),
+    bg_effect: safeText((custom && custom.bg_effect) || defaults.bg_effect || "matrix", 24).toLowerCase(),
     icon,
     background,
     username: safeText(username, 20)
@@ -292,6 +295,10 @@ function buildEditButtons(username, active) {
       new ButtonBuilder().setCustomId(`edit:background:${u}`).setLabel("background").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`edit:text_effect:${u}`).setLabel("text_effect").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`edit:bg_effect:${u}`).setLabel("bg_effect").setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`edit:reset:${u}`).setLabel("reset").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(`edit:submit:${u}`).setLabel("submit").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`edit:status:${u}`).setLabel(active ? "active" : "inactive").setStyle(ButtonStyle.Secondary).setDisabled(true)
@@ -361,6 +368,38 @@ function buildFieldModal(field, username) {
   if (field === "icon" || field === "background") input.setPlaceholder("https://... or rbxassetid://...");
   modal.addComponents(new ActionRowBuilder().addComponents(input));
   return modal;
+}
+
+function buildEffectPicker(field, username, currentValue) {
+  const u = String(username).toLowerCase();
+  const current = String(currentValue || "").toLowerCase();
+  const isText = field === "text_effect";
+  const choices = isText
+    ? [
+        { label: "gradient", value: "gradient" },
+        { label: "rainbow", value: "rainbow" },
+        { label: "none", value: "none" }
+      ]
+    : [
+        { label: "matrix", value: "matrix" },
+        { label: "pulse", value: "pulse" },
+        { label: "scanline", value: "scanline" },
+        { label: "glow", value: "glow" },
+        { label: "none", value: "none" }
+      ];
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`select:${field}:${u}`)
+    .setPlaceholder(`${field} (${current || "select"})`)
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      choices.map((c) => ({
+        label: c.label,
+        value: c.value,
+        default: c.value === current
+      }))
+    );
+  return new ActionRowBuilder().addComponents(select);
 }
 
 function currentActiveByUsername(activeUsers, username) {
@@ -589,6 +628,22 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine, storeUpload, 
 
         if (p.root === "edit") {
           const field = p.action;
+          if (field === "text_effect" || field === "bg_effect") {
+            const key = getDraftKey(interaction.user.id, p.field);
+            const draft = draftStore.get(key) || { username: p.field, tag: shallowClone(getTagByUsername(db, p.field) || {}), touchedAt: Date.now() };
+            draftStore.set(key, draft);
+            const row = buildEffectPicker(field, p.field, draft.tag[field] || "");
+            await interaction.reply({
+              flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+              components: [
+                new ContainerBuilder().addTextDisplayComponents(
+                  new TextDisplayBuilder().setContent(`Pick ${field} for ${p.field}`)
+                ),
+                row
+              ]
+            });
+            return;
+          }
           if (!["text", "text_color", "line_color", "icon", "background"].includes(field)) return;
           const modal = buildFieldModal(field, p.field);
           await interaction.showModal(modal);
@@ -651,6 +706,37 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine, storeUpload, 
             return;
           }
         }
+      }
+
+      if (interaction.isStringSelectMenu()) {
+        const p = parseCustomId(interaction.customId);
+        if (p.root !== "select") return;
+        const field = p.action;
+        const username = cleanName(p.field);
+        if (!username) return;
+        if (field !== "text_effect" && field !== "bg_effect") return;
+        const value = String(interaction.values && interaction.values[0] || "").toLowerCase();
+        const allowed = field === "text_effect"
+          ? new Set(["gradient", "rainbow", "none"])
+          : new Set(["matrix", "pulse", "scanline", "glow", "none"]);
+        if (!allowed.has(value)) return;
+        const key = getDraftKey(interaction.user.id, username);
+        const base = draftStore.get(key) || { username, tag: shallowClone(getTagByUsername(db, username) || {}), touchedAt: Date.now() };
+        base.tag[field] = value;
+        base.touchedAt = Date.now();
+        draftStore.set(key, base);
+        const active = currentActiveByUsername(activeUsers, username);
+        const payload = await makeEditPayload({
+          db,
+          assetDir,
+          defaultsFallback,
+          username,
+          tag: base.tag,
+          active,
+          heading: `Editing ${username}`
+        });
+        await interaction.reply(payload);
+        return;
       }
 
       if (interaction.isModalSubmit()) {

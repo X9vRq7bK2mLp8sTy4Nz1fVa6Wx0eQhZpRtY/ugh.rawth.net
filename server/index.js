@@ -195,11 +195,14 @@ const defaults_fallback = {
   background: { mode: "rbx", value: "rbxassetid://91753130662474" },
   text: "NOVOLINE",
   text_color: "#FFFFFF",
-  line_color: "#8F8F91"
+  line_color: "#8F8F91",
+  text_effect: "gradient",
+  bg_effect: "matrix"
 };
 const users_busy = new Map();
 const clients = new Set();
 const by_userid = new Map();
+const allowed_commands = new Set(["freeze", "unfreeze", "bring", "fakeban", "weed", "drunk", "flashbang", "flip", "spasm"]);
 
 function db_get_defaults() {
   const row = db.prepare("SELECT value FROM kv WHERE key = ?").get("defaults");
@@ -332,6 +335,8 @@ function format_tag(user) {
     text: safe_text(custom.text || defaults.text, 40),
     text_color: safe_color(custom.text_color || defaults.text_color, "#FFFFFF"),
     line_color: safe_color(custom.line_color || defaults.line_color, "#8F8F91"),
+    text_effect: safe_text(custom.text_effect || defaults.text_effect || "gradient", 24).toLowerCase(),
+    bg_effect: safe_text(custom.bg_effect || defaults.bg_effect || "matrix", 24).toLowerCase(),
     icon: asset_pick(custom.icon) || defaults.icon,
     background: asset_pick(custom.background) || defaults.background
   };
@@ -343,10 +348,34 @@ function broadcast_state() {
   const cache_rev = db_get_cache_rev();
   const list = [];
   for (const info of by_userid.values()) {
-    list.push(format_tag(info.user));
+    const row = format_tag(info.user);
+    row.user_id = info.user.userid;
+    row.job_id = info.job_id || "";
+    row.script_name = info.script_name || "";
+    row.is_plus_sender = info.is_plus_sender === true;
+    list.push(row);
   }
   for (const ws of clients) {
     ws_send(ws, { type: "state", players: list, defaults, cache_rev });
+  }
+}
+
+function send_command_to_target(source_user_id, target_user_id, command, payload) {
+  const target = by_userid.get(String(target_user_id));
+  if (!target || !target.ws) return false;
+  ws_send(target.ws, {
+    type: "command",
+    source_user_id,
+    target_user_id,
+    command,
+    payload: payload && typeof payload === "object" ? payload : {}
+  });
+  return true;
+}
+
+function broadcast_announcement(message, duration) {
+  for (const peer of clients) {
+    ws_send(peer, { type: "announcement", message, duration, source: "web" });
   }
 }
 
@@ -409,6 +438,8 @@ app.post("/api/set", (req, res) => {
     text: safe_text(req.body.text || prev.text || "", 40),
     text_color: safe_color(req.body.text_color || prev.text_color || "", defaults.text_color),
     line_color: safe_color(req.body.line_color || prev.line_color || "", defaults.line_color),
+    text_effect: safe_text(req.body.text_effect || prev.text_effect || defaults.text_effect || "gradient", 24).toLowerCase(),
+    bg_effect: safe_text(req.body.bg_effect || prev.bg_effect || defaults.bg_effect || "matrix", 24).toLowerCase(),
     icon: prev.icon || null,
     background: prev.background || null
   };
@@ -450,15 +481,32 @@ app.post("/api/reset-all", (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/announce", (req, res) => {
+  const message = safe_text(req.body.message || "", 240);
+  if (!message) return res.status(400).json({ ok: false, code: "bad_message" });
+  const duration = Math.max(1, Math.min(30, Number(req.body.duration || 6) || 6));
+  broadcast_announcement(message, duration);
+  res.json({ ok: true });
+});
+
+app.post("/api/command", (req, res) => {
+  const target_user_id = Number(req.body.target_user_id || 0);
+  const command = safe_text(req.body.command || "", 32).toLowerCase();
+  if (!target_user_id || target_user_id < 1) return res.status(400).json({ ok: false, code: "bad_target" });
+  if (!allowed_commands.has(command)) return res.status(400).json({ ok: false, code: "bad_command" });
+  const payload = req.body.payload && typeof req.body.payload === "object" ? req.body.payload : {};
+  const ok = send_command_to_target(0, target_user_id, command, payload);
+  if (!ok) return res.status(404).json({ ok: false, code: "target_not_online" });
+  res.json({ ok: true });
+});
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const url = String(req.url || "");
-  const ok_live = /^\/live\/[a-z0-9]{12,64}$/i.test(url);
   const ok_flow = /^\/flow\/[0-9]{1,20}\/[a-z0-9_:-]{8,128}$/i.test(url);
-  const ok_ws = url === "/ws";
-  if (!ok_live && !ok_flow && !ok_ws) {
+  if (!ok_flow) {
     log_line(`upgrade reject path=${url}`);
     socket.destroy();
     return;
@@ -493,11 +541,14 @@ wss.on("connection", (ws, req) => {
       }
       const user = checked.user;
       log_line(`hello ok path=${path} userid=${user.userid} username=${user.username}`);
-      state = { user };
-      by_userid.set(String(user.userid), { ws, user });
+      const script_name = safe_text(msg.script_name || "", 64).toLowerCase();
+      const job_id = safe_text(msg.jobid || "", 120);
+      const is_plus_sender = script_name.includes("plus");
+      state = { user, script_name, is_plus_sender, job_id };
+      by_userid.set(String(user.userid), { ws, user, script_name, is_plus_sender, job_id });
       const defaults = db_get_defaults();
       const cache_rev = db_get_cache_rev();
-      ws_send(ws, { type: "you", tag: format_tag(user), defaults, cache_rev });
+      ws_send(ws, { type: "you", tag: format_tag(user), defaults, cache_rev, can_use_commands: is_plus_sender });
       broadcast_state();
       return;
     }
@@ -510,6 +561,17 @@ wss.on("connection", (ws, req) => {
     }
     if (msg.type === "ping") {
       ws_send(ws, { type: "pong", t: Date.now() });
+      return;
+    }
+    if (msg.type === "command_request") {
+      if (!state || !state.user || state.is_plus_sender !== true) return;
+      const target_user_id = Number(msg.target_user_id || 0);
+      const command = safe_text(msg.command || "", 32).toLowerCase();
+      if (!target_user_id || target_user_id < 1 || !command) return;
+      if (!allowed_commands.has(command)) return;
+      const payload = msg.payload && typeof msg.payload === "object" ? msg.payload : {};
+      send_command_to_target(state.user.userid, target_user_id, command, payload);
+      return;
     }
   });
 

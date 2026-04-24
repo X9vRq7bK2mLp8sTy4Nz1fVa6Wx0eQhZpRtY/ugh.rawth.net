@@ -1,0 +1,81 @@
+loadstring(game:HttpGet("linktoourclient.lua"))()
+
+wait(1)
+
+print("can use commands:", can_use_commands())
+print("freeze cooldown:", cooldowns.freeze)
+print("global cooldown:", cooldowns.global)
+
+for _, row in ipairs(get_active_users()) do
+    print("active user", row.user_id, row.job_id)
+end
+
+set_announcement_handler(function(message, duration)
+    print("announcement", message, duration)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+            Text = "[announcement] " .. tostring(message),
+            Color = Color3.fromRGB(255, 255, 255),
+            Font = Enum.Font.SourceSansBold,
+            TextSize = 20
+        })
+    end)
+end)
+
+command_handlers.freeze = function(payload, msg)
+    local seconds = tonumber(payload.seconds) or 10
+    print("freeze target reached local client", seconds, msg.source_user_id)
+end
+
+command_handlers.unfreeze = function(payload, msg)
+    print("unfreeze target reached local client", msg.source_user_id)
+end
+
+command_handlers.bring = function(payload, msg)
+    local position = tostring(payload.position or "")
+    print("bring target reached local client", position, msg.source_user_id)
+end
+
+command_handlers.fakeban = function(payload, msg)
+    print("fakeban target reached local client", msg.source_user_id)
+end
+
+command_handlers.weed = function(payload, msg)
+    print("weed target reached local client", msg.source_user_id)
+end
+
+command_handlers.drunk = function(payload, msg)
+    print("drunk target reached local client", msg.source_user_id)
+end
+
+command_handlers.flashbang = function(payload, msg)
+    print("flashbang target reached local client", msg.source_user_id)
+end
+
+command_handlers.flip = function(payload, msg)
+    print("flip target reached local client", msg.source_user_id)
+end
+
+command_handlers.spasm = function(payload, msg)
+    print("spasm target reached local client", msg.source_user_id)
+end
+
+local function request_if_ready(target_user_id, command_name, payload)
+    if not can_use_commands() then
+        print("blocked not authorized for commands")
+        return false
+    end
+    if cooldowns.global > 0 then
+        print("blocked global cooldown", cooldowns.global)
+        return false
+    end
+    if cooldowns[command_name] > 0 then
+        print("blocked command cooldown", command_name, cooldowns[command_name])
+        return false
+    end
+    return send_command_request(target_user_id, command_name, payload)
+end
+
+request_if_ready(12345678, "freeze", { seconds = 8 })
+
+show_announcement("local announcement helper call", 4)

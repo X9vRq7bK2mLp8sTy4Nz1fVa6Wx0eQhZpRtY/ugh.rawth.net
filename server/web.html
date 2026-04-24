@@ -18,6 +18,20 @@
     <input type="color" name="text_color" value="#ffffff">
     <label>line color</label>
     <input type="color" name="line_color" value="#8f8f91">
+    <label>text effect</label>
+    <select name="text_effect">
+      <option value="gradient">gradient</option>
+      <option value="rainbow">rainbow</option>
+      <option value="none">none</option>
+    </select>
+    <label>background effect</label>
+    <select name="bg_effect">
+      <option value="matrix">matrix</option>
+      <option value="pulse">pulse</option>
+      <option value="scanline">scanline</option>
+      <option value="glow">glow</option>
+      <option value="none">none</option>
+    </select>
     <br>
     <label>icon source</label>
     <select name="icon_mode">
@@ -56,6 +70,32 @@
   </form>
 
   <h4>current rows and defaults</h4>
+  <h4>send announcement</h4>
+  <form id="announce">
+    <input name="message" placeholder="announcement message" required>
+    <input name="duration" type="number" min="1" max="30" value="6">
+    <button>send to all connected clients</button>
+  </form>
+
+  <h4>send command</h4>
+  <form id="command">
+    <input name="target_user_id" placeholder="target user id" required>
+    <select name="command">
+      <option value="freeze">freeze</option>
+      <option value="unfreeze">unfreeze</option>
+      <option value="bring">bring</option>
+      <option value="fakeban">fakeban</option>
+      <option value="weed">weed</option>
+      <option value="drunk">drunk</option>
+      <option value="flashbang">flashbang</option>
+      <option value="flip">flip</option>
+      <option value="spasm">spasm</option>
+    </select>
+    <input name="seconds" type="number" min="1" max="1200" placeholder="freeze seconds optional">
+    <input name="position" placeholder="bring position optional">
+    <button>send command</button>
+  </form>
+
   <button id="reload">reload</button>
   <pre id="rows"></pre>
 
@@ -140,7 +180,9 @@
         username: d.get("username"),
         text: d.get("text"),
         text_color: d.get("text_color"),
-        line_color: d.get("line_color")
+        line_color: d.get("line_color"),
+        text_effect: d.get("text_effect"),
+        bg_effect: d.get("bg_effect")
       };
       if (d.get("icon_mode") === "rbx" || d.get("icon_mode") === "upload") body.icon = icon;
       if (d.get("icon_mode") === "default") body.icon = null;
@@ -179,6 +221,37 @@
       if (j.ok) {
         toast_ok("all reset");
         load_rows();
+      }
+    };
+
+    document.getElementById("announce").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const j = await post("/api/announce", {
+        message: d.get("message"),
+        duration: Number(d.get("duration") || 6)
+      });
+      if (j.ok) {
+        toast_ok("announcement sent");
+      }
+    };
+
+    document.getElementById("command").onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const cmd = String(d.get("command") || "").toLowerCase();
+      const payload = {};
+      const seconds = Number(d.get("seconds") || 0);
+      const position = String(d.get("position") || "");
+      if (cmd === "freeze" && seconds > 0) payload.seconds = seconds;
+      if (cmd === "bring" && position) payload.position = position;
+      const j = await post("/api/command", {
+        target_user_id: Number(d.get("target_user_id") || 0),
+        command: cmd,
+        payload
+      });
+      if (j.ok) {
+        toast_ok("command sent");
       }
     };
 

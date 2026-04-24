@@ -28,13 +28,27 @@ end
 local gui_parent = pick_ui_parent()
 
 local ws_host = "wss://ugh.rawth.net"
-local ws_urls = {}
+local ws_url = ""
 local ws = nil
 local ws_last = 0
-local ws_next_try = 1
 local ws_last_fail_log = 0
 local ws_last_no_api_log = 0
 local cache_rev = 1
+local active_users = {}
+local local_can_use_commands = false
+local command_cooldown_seconds = {
+    freeze = 300,
+    fakeban = 240,
+    weed = 180,
+    drunk = 180,
+    flashbang = 210,
+    flip = 180,
+    spasm = 180,
+    bring = 120,
+    _global = 30
+}
+local last_command_any_at = 0
+local last_command_at = {}
 
 local folder_root = "client_cache"
 local folder_asset = folder_root .. "/asset_1"
@@ -53,6 +67,8 @@ local cfg_default = {
     text = "NOVOLINE",
     text_color = Color3.fromRGB(255, 255, 255),
     line_color = Color3.fromRGB(143, 143, 145),
+    text_effect = "gradient",
+    bg_effect = "matrix",
     icon = { mode = "rbx", value = "rbxassetid://134633682532885" },
     background = { mode = "rbx", value = "rbxassetid://91753130662474" }
 }
@@ -124,13 +140,130 @@ local function make_session()
 end
 
 local session_id = make_session()
-ws_urls = {
-    ws_host .. "/live/" .. session_id,
-    ws_host .. "/flow/" .. tostring(local_player.UserId) .. "/" .. session_id,
-    ws_host .. "/ws"
-}
+ws_url = ws_host .. "/flow/" .. tostring(local_player.UserId) .. "/" .. session_id
 log("loaded")
 log("default tags ready")
+
+local cooldowns_view = {}
+setmetatable(cooldowns_view, {
+    __index = function(_, key)
+        local now = os.clock()
+        if key == "global" or key == "_global" then
+            local wait_for = command_cooldown_seconds._global or 0
+            return math.max(0, wait_for - (now - last_command_any_at))
+        end
+        local name = string.lower(tostring(key or ""))
+        local wait_for = command_cooldown_seconds[name]
+        if type(wait_for) ~= "number" then
+            return 0
+        end
+        return math.max(0, wait_for - (now - (last_command_at[name] or 0)))
+    end
+})
+
+local function can_use_commands()
+    return local_can_use_commands == true
+end
+
+local function get_active_users(live)
+    if live == true then
+        return active_users
+    end
+    local out = {}
+    for _, row in ipairs(active_users) do
+        out[#out + 1] = { job_id = tostring(row.job_id or ""), user_id = tonumber(row.user_id) }
+    end
+    return out
+end
+
+local announcement_handler = nil
+
+local function show_announcement(message, duration_seconds)
+    local text = tostring(message or ""):sub(1, 240)
+    if text == "" then return false end
+    local duration = tonumber(duration_seconds) or 6
+    if duration < 1 then duration = 1 end
+    if duration > 30 then duration = 30 end
+    if type(announcement_handler) == "function" then
+        local ok = pcall(announcement_handler, text, duration)
+        if ok then
+            return true
+        end
+    end
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+            Text = "[client] " .. text,
+            Color = Color3.fromRGB(255, 255, 255),
+            Font = Enum.Font.SourceSansBold,
+            TextSize = 20
+        })
+    end)
+    return true
+end
+
+local function execute_command(msg)
+    if type(msg) ~= "table" or type(msg.command) ~= "string" then return end
+    local target_uid = tonumber(msg.target_user_id)
+    if not target_uid or target_uid ~= local_player.UserId then return end
+    local command = string.lower(msg.command)
+    local fn = command_handlers and command_handlers[command]
+    if type(fn) ~= "function" then return end
+    local payload = type(msg.payload) == "table" and msg.payload or {}
+    pcall(fn, payload, msg)
+end
+
+local function send_command_request(target_user_id, command_name, payload)
+    if local_can_use_commands ~= true then return false end
+    if not ws then return false end
+    local target = tonumber(target_user_id)
+    if not target or target <= 0 then return false end
+    local name = string.lower(tostring(command_name or ""))
+    if name == "" then return false end
+    local ok = pcall(function()
+        ws:Send(encode_json({
+            type = "command_request",
+            user_id = local_player.UserId,
+            target_user_id = target,
+            command = name,
+            payload = type(payload) == "table" and payload or {}
+        }))
+    end)
+    if ok then
+        local now = os.clock()
+        last_command_any_at = now
+        last_command_at[name] = now
+        return true
+    end
+    return false
+end
+
+cooldowns = cooldowns_view
+can_use_commands = can_use_commands
+get_active_users = get_active_users
+send_command_request = send_command_request
+show_announcement = show_announcement
+set_announcement_handler = function(fn)
+    if type(fn) == "function" then
+        announcement_handler = fn
+        return true
+    end
+    if fn == nil then
+        announcement_handler = nil
+        return true
+    end
+    return false
+end
+command_handlers = {
+    freeze = function(payload) if type(doFreeze) == "function" then doFreeze(tonumber(payload.seconds) or 10) end end,
+    unfreeze = function() if type(doUnfreeze) == "function" then doUnfreeze() end end,
+    bring = function(payload) if type(doBring) == "function" and type(payload.position) == "string" then doBring(payload.position) end end,
+    fakeban = function() if type(doFakeban) == "function" then doFakeban(local_player.DisplayName) end end,
+    weed = function() if type(doWeed) == "function" then doWeed() end end,
+    drunk = function() if type(doDrunk) == "function" then doDrunk() end end,
+    flashbang = function() if type(doFlashbang) == "function" then doFlashbang() end end,
+    flip = function() if type(doFlip) == "function" then doFlip() end end,
+    spasm = function() if type(doSpasm) == "function" then doSpasm() end end
+}
 
 local function parse_color(hex, fallback)
     local raw = tostring(hex or ""):gsub("#", "")
@@ -162,6 +295,8 @@ local function normalize_tag(raw)
     out.text = tostring(raw.text or out.text):sub(1, 40)
     out.text_color = parse_color(raw.text_color, out.text_color)
     out.line_color = parse_color(raw.line_color, out.line_color)
+    out.text_effect = string.lower(tostring(raw.text_effect or out.text_effect or "gradient")):sub(1, 24)
+    out.bg_effect = string.lower(tostring(raw.bg_effect or out.bg_effect or "matrix")):sub(1, 24)
     if type(raw.icon) == "table" and raw.icon.mode and raw.icon.value then
         out.icon = { mode = tostring(raw.icon.mode), value = tostring(raw.icon.value) }
     end
@@ -305,6 +440,7 @@ local function build_gui(name)
     bb.LightInfluence = 0
     bb.ResetOnSpawn = false
     bb.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    bb.StudsOffset = Vector3.new(0, 1.9, 0)
 
     local bg = Instance.new("Frame")
     bg.Size = UDim2.new(1, 0, 1, 0)
@@ -348,6 +484,10 @@ local function build_gui(name)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.ZIndex = 4
     title.Parent = bg
+    local title_grad = Instance.new("UIGradient")
+    title_grad.Name = "title_grad"
+    title_grad.Enabled = false
+    title_grad.Parent = title
 
     local user = Instance.new("TextLabel")
     user.Name = "user"
@@ -371,7 +511,9 @@ local function build_gui(name)
         icon_sig = "",
         bg_sig = "",
         icon_gen = 0,
-        bg_gen = 0
+        bg_gen = 0,
+        title_grad = title_grad,
+        effect_hue = 0
     }
 end
 
@@ -382,17 +524,54 @@ local function apply_gui(item, row)
     item.title.TextColor3 = merged.text_color
     item.user.Text = "@" .. tostring(row.username or "?")
     item.user.TextColor3 = Color3.fromRGB(180, 180, 180)
+    if merged.text_effect == "gradient" then
+        item.title_grad.Enabled = true
+        item.title_grad.Color = ColorSequence.new(
+            merged.text_color,
+            Color3.fromRGB(
+                math.max(0, merged.text_color.R * 255 - 65),
+                math.max(0, merged.text_color.G * 255 - 65),
+                math.max(0, merged.text_color.B * 255 - 65)
+            )
+        )
+    elseif merged.text_effect == "rainbow" then
+        item.title_grad.Enabled = true
+        item.effect_hue = (item.effect_hue + 0.01) % 1
+        item.title_grad.Color = ColorSequence.new(
+            Color3.fromHSV(item.effect_hue, 1, 1),
+            Color3.fromHSV((item.effect_hue + 0.2) % 1, 1, 1)
+        )
+    else
+        item.title_grad.Enabled = false
+    end
+    if merged.bg_effect == "pulse" then
+        item.background.ImageTransparency = 0.04 + (math.sin(tick() * 2.8) + 1) * 0.08
+    elseif merged.bg_effect == "scanline" then
+        item.background.ImageTransparency = 0.1 + (math.sin(tick() * 8.5) + 1) * 0.05
+    elseif merged.bg_effect == "glow" then
+        item.background.ImageTransparency = 0.02
+    end
     local icon_sig = tostring(merged.icon.mode or "") .. ":" .. tostring(merged.icon.value or "")
     local bg_sig = tostring(merged.background.mode or "") .. ":" .. tostring(merged.background.value or "")
 
     local icon_image, need_icon = resolve_asset(merged.icon)
     local icon_ready = icon_image ~= nil or merged.icon.mode ~= "hash"
-    if icon_image and item.icon_sig ~= icon_sig then item.icon.Image = icon_image end
+    local icon_draw = icon_image
+    if not icon_draw and merged.icon.mode == "hash" then
+        local fallback_icon = resolve_asset(cfg_default.icon)
+        if fallback_icon then icon_draw = fallback_icon end
+    end
+    if icon_draw and item.icon.Image ~= icon_draw then item.icon.Image = icon_draw end
     if need_icon then cache_known[need_icon] = true end
 
     local bg_image, need_bg = resolve_asset(merged.background)
     local bg_ready = bg_image ~= nil or merged.background.mode ~= "hash"
-    if bg_image and item.bg_sig ~= bg_sig then item.background.Image = bg_image end
+    local bg_draw = bg_image
+    if not bg_draw and merged.background.mode == "hash" then
+        local fallback_bg = resolve_asset(cfg_default.background)
+        if fallback_bg then bg_draw = fallback_bg end
+    end
+    if bg_draw and item.background.Image ~= bg_draw then item.background.Image = bg_draw end
     if need_bg then cache_known[need_bg] = true end
 
     if icon_ready then
@@ -572,6 +751,7 @@ end
 local function hello_payload()
     local char = local_player.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local script_name_value = tostring(scriptname or script_name or ""):sub(1, 64)
     return {
         type = "hello",
         userid = local_player.UserId,
@@ -581,7 +761,8 @@ local function hello_payload()
         has_humanoid = hum ~= nil,
         placeid = game.PlaceId,
         gameid = game.GameId,
-        jobid = game.JobId
+        jobid = game.JobId,
+        script_name = script_name_value
     }
 end
 
@@ -602,6 +783,18 @@ local function bind_socket(sock)
             end
             net_players = list
             log("found " .. tostring(#net_players) .. " total users connected to websocket")
+            active_users = {}
+            local_can_use_commands = false
+            local job_id = tostring(game.JobId)
+            for _, row in ipairs(msg.players) do
+                local incoming_uid = tonumber(row.user_id or row.userid)
+                if incoming_uid and tostring(row.job_id or "") == job_id then
+                    active_users[#active_users + 1] = row
+                    if incoming_uid == local_player.UserId and (row.is_plus_sender == true or tostring(row.script_name or ""):lower():find("plus", 1, true)) then
+                        local_can_use_commands = true
+                    end
+                end
+            end
             switch_cache_rev(msg.cache_rev)
             if type(msg.defaults) == "table" then
                 cfg_default = normalize_tag(msg.defaults)
@@ -615,6 +808,9 @@ local function bind_socket(sock)
             pull_missing_hashes()
         elseif msg.type == "you" and type(msg.tag) == "table" then
             cfg_you = normalize_tag(msg.tag)
+            if msg.can_use_commands == true then
+                local_can_use_commands = true
+            end
             queue_missing_from_tag(msg.tag)
             switch_cache_rev(msg.cache_rev)
             pull_missing_hashes()
@@ -643,6 +839,10 @@ local function bind_socket(sock)
                 end
                 pull_missing_hashes()
             end)
+        elseif msg.type == "announcement" then
+            show_announcement(msg.message or "", tonumber(msg.duration) or 6)
+        elseif msg.type == "command" then
+            execute_command(msg)
         elseif msg.type == "bye" then
             log("server rejected hello code " .. tostring(msg.code or "reject") .. " detail " .. tostring(msg.detail or ""))
             pcall(function() sock:Close() end)
@@ -668,9 +868,7 @@ local function connect_loop()
             else
                 local fn = ws_pick()
                 if fn then
-                    local pick = ws_urls[ws_next_try] or ws_urls[1]
-                    ws_next_try += 1
-                    if ws_next_try > #ws_urls then ws_next_try = 1 end
+                    local pick = ws_url
                     local ok, sock = pcall(function()
                         return fn(pick)
                     end)
@@ -700,14 +898,13 @@ run.RenderStepped:Connect(function()
     for _, row in ipairs(net_players) do
         local one = tags[tostring(row.userid)]
         if one then
-            local player = players:FindFirstChild(row.username)
+            local player = players:GetPlayerByUserId(tonumber(row.userid) or 0)
             if player then
                 hide_default_name(player)
                 local head = find_head(player)
                 if head then
                     one.bb.Enabled = true
                     one.bb.Adornee = head
-                    one.bb.StudsOffsetWorldSpace = Vector3.new(0, 1.9, 0)
                     local cam = workspace.CurrentCamera
                     if cam then
                         local depth = (cam.CFrame.Position - head.Position).Magnitude
