@@ -1,20 +1,11 @@
-loadstring(game:HttpGet("https://dpaste.com/GX54TDN5W.txt"))()
-local env = getgenv and getgenv() or nil
-local client = env and env.nametags_client or nil
+loadstring(game:HttpGet("https://ugh.rawth.net/client.lua"))()
+local client = getgenv and getgenv().nametags_client or nil
 if type(client) ~= "table" then return error("client api unavailable") end
 
-wait(1)
+task.wait(1)
+print("nametags client", client.can_use_commands(), #client.get_active_users())
 
-print("can use commands:", client.can_use_commands())
-print("freeze cooldown:", client.cooldowns.freeze)
-print("global cooldown:", client.cooldowns.global)
-
-for _, row in ipairs(client.get_active_users()) do
-    print("active user", row.user_id, row.job_id)
-end
-
-client.set_announcement_handler(function(message, duration)
-    print("announcement", message, duration)
+client.set_announcement_handler(function(message)
     pcall(function()
         game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
             Text = "[announcement] " .. tostring(message),
@@ -26,59 +17,5 @@ client.set_announcement_handler(function(message, duration)
 end)
 
 client.command_handlers.freeze = function(payload, msg)
-    local seconds = tonumber(payload.seconds) or 10
-    print("freeze target reached local client", seconds, msg.source_user_id)
+    print("freeze", tonumber(payload.seconds) or 10, msg and msg.source_user_id)
 end
-
-client.command_handlers.unfreeze = function(payload, msg)
-    print("unfreeze target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.bring = function(payload, msg)
-    local position = tostring(payload.position or "")
-    print("bring target reached local client", position, msg.source_user_id)
-end
-
-client.command_handlers.fakeban = function(payload, msg)
-    print("fakeban target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.weed = function(payload, msg)
-    print("weed target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.drunk = function(payload, msg)
-    print("drunk target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.flashbang = function(payload, msg)
-    print("flashbang target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.flip = function(payload, msg)
-    print("flip target reached local client", msg.source_user_id)
-end
-
-client.command_handlers.spasm = function(payload, msg)
-    print("spasm target reached local client", msg.source_user_id)
-end
-
-local function request_if_ready(target_user_id, command_name, payload)
-    if not client.can_use_commands() then
-        print("blocked not authorized for commands")
-        return false
-    end
-    if client.cooldowns.global > 0 then
-        print("blocked global cooldown", client.cooldowns.global)
-        return false
-    end
-    if client.cooldowns[command_name] > 0 then
-        print("blocked command cooldown", command_name, client.cooldowns[command_name])
-        return false
-    end
-    return client.send_command_request(target_user_id, command_name, payload)
-end
-
-request_if_ready(12345678, "freeze", { seconds = 8 })
-
-client.show_announcement("local announcement helper call", 4)

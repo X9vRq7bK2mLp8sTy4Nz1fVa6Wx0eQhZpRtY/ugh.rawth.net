@@ -26,6 +26,7 @@ local function pick_ui_parent()
 end
 
 local gui_parent = pick_ui_parent()
+local tag_gui_parent = player_gui
 
 local ws_host = "wss://ugh.rawth.net"
 local ws_url = ""
@@ -62,6 +63,20 @@ screen.ResetOnSpawn = false
 screen.IgnoreGuiInset = true
 screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screen.Parent = gui_parent
+
+local tag_folder_name = "_client_tag_billboards"
+local function ensure_tag_parent()
+    if not tag_gui_parent or tag_gui_parent.Parent == nil then
+        tag_gui_parent = local_player:FindFirstChildOfClass("PlayerGui") or local_player:WaitForChild("PlayerGui")
+    end
+    local folder = tag_gui_parent:FindFirstChild(tag_folder_name)
+    if not folder then
+        folder = Instance.new("Folder")
+        folder.Name = tag_folder_name
+        folder.Parent = tag_gui_parent
+    end
+    return folder
+end
 
 local cfg_default = {
     text = "NOVOLINE",
@@ -757,11 +772,25 @@ end
 
 local function is_valid_row(row)
     if type(row) ~= "table" then return false end
-    local uid = tonumber(row.userid)
+    local uid = tonumber(row.userid or row.user_id)
     if not uid or uid < 1 then return false end
-    local username = tostring(row.username or "")
+    local username = tostring(row.username or row.name or "")
     if username == "" then return false end
     return true
+end
+
+local function normalize_row(row)
+    if type(row) ~= "table" then return nil end
+    local uid = tonumber(row.userid or row.user_id)
+    if not uid or uid < 1 then return nil end
+    local username = tostring(row.username or row.name or "")
+    if username == "" then return nil end
+    local out = {}
+    for k, v in pairs(row) do out[k] = v end
+    out.userid = uid
+    out.user_id = uid
+    out.username = username
+    return out
 end
 
 local function ensure_tag(row)
@@ -771,7 +800,7 @@ local function ensure_tag(row)
     if not one then
         one = build_gui(id)
         one.bb.Enabled = false
-        one.bb.Parent = screen
+        one.bb.Parent = ensure_tag_parent()
         tags[id] = one
     end
     apply_gui(one, row)
@@ -901,8 +930,9 @@ local function bind_socket(sock)
         if msg.type == "state" and type(msg.players) == "table" then
             local list = {}
             for _, row in ipairs(msg.players) do
-                if is_valid_row(row) then
-                    list[#list + 1] = row
+                local normalized = normalize_row(row)
+                if normalized then
+                    list[#list + 1] = normalized
                 end
             end
             net_players = list
@@ -1024,6 +1054,9 @@ run.RenderStepped:Connect(function()
         local one = tags[tostring(row.userid)]
         if one then
             local player = players:GetPlayerByUserId(tonumber(row.userid) or 0)
+            if not player and type(row.username) == "string" and row.username ~= "" then
+                player = players:FindFirstChild(row.username)
+            end
             if player then
                 hide_default_name(player)
                 local head = find_head(player)
@@ -1077,6 +1110,7 @@ run.Heartbeat:Connect(function()
     if not screen.Parent or screen.Parent.Parent == nil then
         screen.Parent = pick_ui_parent()
     end
+    ensure_tag_parent()
 end)
 
 return client_api

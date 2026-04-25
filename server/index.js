@@ -399,6 +399,11 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "web.html"));
 });
 
+app.get("/client.lua", (req, res) => {
+  res.type("text/plain; charset=utf-8");
+  res.sendFile(path.join(root, "client.lua"));
+});
+
 app.get("/api/list", (req, res) => {
   const out = db_list_tags();
   const defaults = db_get_defaults();

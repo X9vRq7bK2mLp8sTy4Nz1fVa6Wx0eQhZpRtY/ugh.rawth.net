@@ -640,8 +640,7 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine, storeUpload, 
             const draft = draftStore.get(key) || { username: p.field, tag: shallowClone(getTagByUsername(db, p.field) || {}), touchedAt: Date.now() };
             draftStore.set(key, draft);
             const row = buildEffectPicker(field, p.field, draft.tag[field] || "");
-            await interaction.reply({
-              flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+            await interaction.update({
               components: [
                 new ContainerBuilder().addTextDisplayComponents(
                   new TextDisplayBuilder().setContent(`Pick ${field} for ${p.field}`)
@@ -742,7 +741,7 @@ function initDiscordBot({ db, assetDir, defaultsFallback, logLine, storeUpload, 
           active,
           heading: `Editing ${username}`
         });
-        await interaction.reply(payload);
+        await interaction.update(payload);
         return;
       }
 
