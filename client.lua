@@ -581,8 +581,45 @@ local function build_gui(name)
         title_base_text = "",
         text_fx_t = tick(),
         bg_fx_t = tick(),
-        line_base = Color3.fromRGB(143, 143, 145)
+        line_base = Color3.fromRGB(143, 143, 145),
+        matrix_box = nil,
+        matrix_nodes = nil
     }
+end
+
+local function ensure_matrix_effect(item)
+    if item.matrix_box and item.matrix_box.Parent then
+        return
+    end
+    local box = Instance.new("Frame")
+    box.Name = "matrix_fx"
+    box.Size = UDim2.new(1, 0, 1, 0)
+    box.BackgroundTransparency = 1
+    box.BorderSizePixel = 0
+    box.ClipsDescendants = true
+    box.ZIndex = 2
+    box.Parent = item.bg
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 10)
+    local nodes = {}
+    for _ = 1, 4 do
+        local col = Instance.new("TextLabel")
+        col.Size = UDim2.new(0, 10, 1, 0)
+        col.BackgroundTransparency = 1
+        col.TextTransparency = 0.62
+        col.TextSize = 7
+        col.Font = Enum.Font.GothamBold
+        col.Text = "1\n0\n1\n0"
+        col.ZIndex = 2
+        col.Parent = box
+        nodes[#nodes + 1] = {
+            label = col,
+            x = math.random(),
+            speed = 0.15 + math.random() * 0.3,
+            phase = math.random() * 2
+        }
+    end
+    item.matrix_box = box
+    item.matrix_nodes = nodes
 end
 
 local function apply_gui(item, row)
@@ -693,6 +730,12 @@ local function update_effects(item, now)
         item.title.Text = item.title_base_text
         item.title.Position = UDim2.new(0, 40, 0, 4 + math.sin(now * 5.5) * 1.8)
         item.title.Rotation = math.sin(now * 4.3) * 2.8
+    elseif text_fx == "gradient" then
+        item.title.Text = item.title_base_text
+        item.title.Position = UDim2.new(0, 40, 0, 4)
+        item.title.Rotation = 0
+        item.title_grad.Enabled = true
+        item.title_grad.Rotation = math.sin((now - item.text_fx_t) * 1.6) * 45 + 45
     elseif text_fx == "typewriter" then
         local count = math.floor((now - item.text_fx_t) * 18)
         local full = item.title_base_text
@@ -724,29 +767,48 @@ local function update_effects(item, now)
         item.title.Rotation = 0
     end
     if bg_fx == "matrix" then
-        item.background.ImageColor3 = Color3.fromHSV(0.34, 0.55, 0.85)
-        item.background.ImageTransparency = 0.08 + (math.sin(now * 6.5) + 1) * 0.08
+        ensure_matrix_effect(item)
+        item.background.ImageColor3 = Color3.new(1, 1, 1)
+        item.background.ImageTransparency = 0.12
+        item.stroke.Color = item.line_base
+        if item.matrix_box then
+            item.matrix_box.Visible = true
+        end
+        if item.matrix_nodes then
+            for _, node in ipairs(item.matrix_nodes) do
+                local y = ((now * node.speed + node.phase) % 2) - 1
+                node.label.TextColor3 = item.line_base
+                node.label.Position = UDim2.new(node.x, 0, y, 0)
+            end
+        end
     elseif bg_fx == "pulse" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         item.background.ImageTransparency = 0.04 + (math.sin(now * 2.8) + 1) * 0.08
     elseif bg_fx == "scanline" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         item.background.ImageTransparency = 0.1 + (math.sin(now * 8.5) + 1) * 0.05
     elseif bg_fx == "fire" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.fromHSV(0.03 + math.sin(now * 3.4) * 0.02, 0.85, 1)
         item.background.ImageTransparency = 0.05 + (math.sin(now * 4.5) + 1) * 0.06
     elseif bg_fx == "glitch" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         item.background.ImageTransparency = 0.05 + math.random() * 0.2
     elseif bg_fx == "rainbow" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.effect_hue = (item.effect_hue + 0.01) % 1
         item.stroke.Color = Color3.fromHSV(item.effect_hue, 1, 1)
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         item.background.ImageTransparency = 0.08
     elseif bg_fx == "snow" then
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         item.background.ImageTransparency = 0.12 + (math.sin(now * 7.7) + 1) * 0.04
     else
+        if item.matrix_box then item.matrix_box.Visible = false end
         item.background.ImageColor3 = Color3.new(1, 1, 1)
         if item.stroke.Color ~= item.line_base then
             item.stroke.Color = item.line_base
